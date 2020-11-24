@@ -88,12 +88,19 @@ static int __init lkm_example_init(void) {
     DISABLE_W_PROTECTED_MEMORY
     original_read = xchg(modified_at_address, modified_function);
     ENABLE_W_PROTECTED_MEMORY
-    
+
     return 0;
 }
 
 static void __exit lkm_example_exit(void) {
     printk(KERN_INFO "Goodbye, World!\n");
+
+    void **modified_at_address = &sys_call_table[__NR_read];
+    void *modified_function = original_read;
+
+    DISABLE_W_PROTECTED_MEMORY
+    original_read = xchg(modified_at_address, modified_function);
+    ENABLE_W_PROTECTED_MEMORY
 }
 
 
