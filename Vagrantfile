@@ -53,7 +53,7 @@ Vagrant.configure(2) do |config|
     # Customize number of CPU
     vb.cpus = 6
     # Customize VM name
-    vb.name = "lab7"
+    vb.name = "rootkit-vm"
   end
   #
   # View the documentation for the provider you are using for more
