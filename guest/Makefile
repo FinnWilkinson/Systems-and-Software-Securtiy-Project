@@ -1,7 +1,13 @@
-obj-m += rootkit.o
+TARGET = rootkit
+rootkit-objs := rootkit_main.o modify_syscalls.o
+
+KDIR ?= /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+obj-m += $(TARGET).o
 
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd) modules
+	make -C $(KDIR) M=$(PWD) modules
 
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd) clean
+	make -C $(KDIR) M=$(shell pwd) clean
