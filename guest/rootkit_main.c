@@ -23,7 +23,7 @@ static int __init lkm_example_init(void) {
 
     update_sys_calls(sys_call_table);
 
-    hide();
+    //hide();
     return 0;
 }
 
@@ -36,4 +36,4 @@ static void __exit lkm_example_exit(void) {
 
 
 module_init(lkm_example_init);
-module_exit(lkm_example_exit);
+//module_exit(lkm_example_exit);
