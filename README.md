@@ -1,7 +1,20 @@
 # S3CW
 Repository for Systems and Software Security unit coursework
 
-# Building Instructions
+## Interacting with the Rootkit
+
+Some commands are accessible by using the system call `kill(pid_t pid, int, sig)`. Running this call with the following `sig` values will use our overridden method:
+
+| `sig` value | Result                                  |
+| ----------- | --------------------------------------- |
+| 32          | Gain root access                        |
+| 33          | Hide the rootkit module from the list   |
+| 34          | Unhide the rootkit module from the list |
+
+
+
+## Building Instructions
+
 ### Booting Vagrant
 1. `vagrant up` in folder containing vagrant file
 2. move `rootkit.c` and `Makefile` to 'guest' folder (in same directory as vagrant file is in)

