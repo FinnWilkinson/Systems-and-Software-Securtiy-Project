@@ -18,7 +18,8 @@ Some commands are accessible by using the system call `kill(pid_t pid, int, sig)
 ### <u>Backdoor Configuration Instructions</u>
 Some set up is needed on the computer you wish to use to access the comprimised machine remotely, and without the need for their password.
 
-***Turn on SSH port forwarding***\n
+***Turn on SSH port forwarding***
+
 For own computer connecting to rootkit back door:
 1. Go to your router settings via a browser (address is typically 192.168.0.1, but your router should show somewhere how to get to the router configuration page).
 2. Find your local ip address by using `ifconfig` then comparing the **inet** addresses until you find one that appears on your router settings site.
