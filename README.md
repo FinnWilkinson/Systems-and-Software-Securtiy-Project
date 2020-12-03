@@ -5,11 +5,13 @@ Repository for Systems and Software Security unit coursework
 
 Some commands are accessible by using the system call `kill(pid_t pid, int, sig)`. Running this call with the following `sig` values will use our overridden method:
 
-| `sig` value | Result                                  |
-| ----------- | --------------------------------------- |
-| 32          | Gain root access                        |
-| 33          | Hide the rootkit module from the list   |
-| 34          | Unhide the rootkit module from the list |
+| `sig` value | Result                                                       |
+| ----------- | ------------------------------------------------------------ |
+| 32          | Gain root access                                             |
+| 33          | Hide the rootkit module from the list                        |
+| 34          | Unhide the rootkit module from the list                      |
+| 35          | Hide any programs with a PID of `pid`                        |
+| 99          | Force the rootkit to become removable. To only be used during development |
 
 
 
