@@ -17,7 +17,7 @@ Some commands are accessible by using the system call `kill(pid_t pid, int, sig)
 ## Building Instructions
 
 ### <u>Backdoor Configuration Instructions</u>
-Some set up is needed on the computer you wish to use to access the comprimised machine remotely, and without the need for their password.
+Some set up is needed on the computer you wish to use to access the comprimised machine remotely, and without the need for their password. It is highly recomended that you use a Linux based machine to access the comprimised computer, as our method is not verified on Windows or MacOS.
 
 ***Turn on SSH port forwarding***
 
