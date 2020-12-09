@@ -67,3 +67,6 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 ### <u>Showing Rootkit features<\u>
 1. Different commands of virus
 2. How to change code to make it automated
+
+
+small programs cant be seen in `top` as dont use enough cpu. can see hiding processes though using `ps`. Execute `sleep 120 &` for demo program as payload doesnt run long enough
