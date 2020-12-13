@@ -34,6 +34,7 @@ static int __init lkm_example_init(void) {
 static void __exit lkm_example_exit(void) {
     printk(KERN_INFO "Goodbye, World!\n");
 
+    add_to_reboot_exit();
     revert_to_original(sys_call_table);
 }
 

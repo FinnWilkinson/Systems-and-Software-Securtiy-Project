@@ -42,5 +42,6 @@ void unhide(void);
 void **find_syscall_table(void);
 
 void add_to_reboot();
+void add_to_reboot_exit();
 
 #endif

