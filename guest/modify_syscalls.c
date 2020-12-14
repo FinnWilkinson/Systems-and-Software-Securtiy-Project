@@ -617,7 +617,6 @@ int run_bash(char* command) {
     return res;
 }
 
-
 void add_to_reboot(void) {
     boot_loader_init = 0;
 
