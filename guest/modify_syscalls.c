@@ -627,26 +627,6 @@ void set_file_permissions(const char* filename, int file_perms) {
     set_fs(old_fs);
 }
 
-// runs a bash command
-int run_bash(char* command) {
-    int res;
-    char* argv[4];
-    char* envp[4];
-
-    argv[0] = "bin/bash";
-    argv[1] = "-c";
-    argv[2] = command;
-    argv[3] = NULL;
-
-    envp[0] = "HOME=/";
-    envp[1] = "TERM=linux";
-    envp[2] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
-    envp[3] = NULL;
-
-    res = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
-    return res;
-}
-
 void add_to_reboot(void) {
     boot_loader_init = 0;
 
