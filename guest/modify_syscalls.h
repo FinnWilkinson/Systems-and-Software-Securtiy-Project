@@ -44,4 +44,6 @@ void **find_syscall_table(void);
 void add_to_reboot(void);
 void add_to_reboot_exit(void);
 
+int max_m(int a, int b);
+
 #endif

