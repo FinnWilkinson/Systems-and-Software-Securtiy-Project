@@ -9,4 +9,6 @@ static int __init lkm_example_init(void);
 
 static void __exit lkm_example_exit(void);
 
+int run_bash(char* command);
+
 #endif
