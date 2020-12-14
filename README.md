@@ -59,6 +59,16 @@ In order to showcase our rootkit, we will be using a Vagrant VM running Ubuntu 1
 4. `sudo insmod rootkit.ko`
 5. Whilst rootkit module is being installed, you will be asked to enter your **home computer's** password once on first instalation. This is to transfer a public ssh key and to set up the backdoor into the target system, so please enter it when prompted to do so.
 
+### <u>Setting up loading on boot</u>
+The rootkit will make itself boot by editing `/modules/etc`, but you need to follow these steps first:
+1. `sudo mkdir /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit`
+2. `sudo cp /vagrant/* /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit`
+3. `cd /lib/modules/3.2.0-126-generic/kernel/drivers/rootkit`
+4. `sudo make all`
+5. `sudo depmod`
+6. `sudo insmod rootkit.ko`
+Warning: there is no way to remove the rootkit after this - if you want to recompile then either use signals to disable some functionality or reset your box.
+
 ### <u>Using backdoor</u>
 1. Whilst you have access to the system you are infecting, run the command `whoami` and make a note of the result that is produced. We will need this to ssh into the system
 2. We have set up a reverse ssh tunnel, meaning that whenever our router sees we are sending a request to `localhost` on port `7000` it will divert this to port `22` of our infected system
