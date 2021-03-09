@@ -1,5 +1,5 @@
 # S3CW
-Repository for Systems and Software Security unit coursework. Included report details the implementation of our linux kernel rootkit, as well as some evaluation and improvements. Mark achieved for this unit: 64 (2:1)
+Repository for Systems and Software Security unit coursework. Included report details the implementation of our linux kernel rootkit, as well as some evaluation and improvements. Mark achieved for this unit - 64% (2:1)
 
 ## Interacting with the Rootkit
 
